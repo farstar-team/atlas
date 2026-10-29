@@ -1,0 +1,20 @@
+name: Atlas checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.12', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - run: node --check web/app.js
+      - run: bash -n install.sh && bash -n uninstall.sh
+      - run: sha256sum --check --quiet SHA256SUMS
+      - run: python installer.py --source . --root "$RUNNER_TEMP/atlas-stage" --stage-only

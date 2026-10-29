@@ -1,0 +1,13 @@
+# Security
+
+Report a vulnerability privately to the repository owner's GitHub contact before publishing exploit details or credentials. Do not include live panel URLs with secret paths, API tokens, subscription IDs, UUIDs, SSH passwords, private keys or raw backups in public issues.
+
+- The admin UI binds loopback by default. Remote public binding requires TLS certificate/key arguments. Use an SSH forward or restrict public HTTPS to administrator IPs.
+- Independent random installer password, scrypt hashing, bounded sessions, HttpOnly SameSite cookies, CSRF headers, origin/Host validation, no CORS, and a restrictive CSP protect the admin surface. No native panel credentials are sent back to the browser.
+- Panel API requests validate TLS, do not follow redirects, ignore ambient HTTP proxies and never log upstream response bodies. Admin API tokens are stored in the private state file; a compromise of this account can change panel settings.
+- Config, backups and engine state are sensitive. Keep `/var/lib/farstar-atlas` private. Engine downloads use a pinned official commit and SHA-256 before execution. Repository checksums detect incomplete/corrupted packages; installing the bootstrap still requires trusting this repository and HTTPS.
+- Public TCP entries forward to authenticated existing native inbounds. SOCKS bridge/provider ports are loopback-only. Do not expose them through a firewall/NAT rule.
+- Per-entry loopback source allowlisting avoids counting internal hops as client addresses. It also means native IP/device concurrency limits cannot recover original client IPs through that forwarding hop. Review whether that tradeoff fits your service; Atlas does not override traffic quotas.
+- Operators can deliberately configure private SOCKS endpoints, backups and direct fallback. These are privileged administration actions. Direct fallback is disabled by default and can change egress country/IP when explicitly enabled.
+- API writes have a backup, scoped guard and recovery journal. Native 3x-ui has no atomic conditional template-write API; simultaneous external edits remain a risk. Run one Atlas instance per panel and avoid concurrent Xray-template editing.
+- This first release is not an independent security audit or a guarantee of unrestricted access, anonymity, isolation of all protocols, or uninterrupted service.

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+.atlas/
+*.sqlite*
+*.log
+node_modules/
+test-results/
+playwright-report/
+.env
+config.local.json

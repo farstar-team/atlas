@@ -1,7 +1,7 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const appBase = new URL('.', document.currentScript.src).pathname;
-let csrf = '', state = null, inbounds = [], refreshing = false, toastTimer, loginMode = 'password';
+let csrf = '', state = null, inbounds = [], refreshing = false, toastTimer, loginMode = 'password', discoveredExisting = [], editingExisting = null;
 function configureLogin(mode) {
   loginMode = mode;
   const native = mode === 'panel';
@@ -53,6 +53,8 @@ function render() {
   $('#pending-banner').hidden = !state.pending;
   $('#add-route').disabled = !state.connected || state.pending;
   $('#empty-add').disabled = !state.connected || state.pending;
+  $('#import-existing').hidden = !state.existing_available;
+  $('#import-existing').disabled = !state.connected || state.pending;
   const enabled = state.routes.filter(r => r.enabled);
   const healthy = enabled.filter(r => state.status[r.id]?.healthy).length;
   const fallback = enabled.filter(r => ['backup','direct'].includes(state.status[r.id]?.state)).length;
@@ -60,12 +62,21 @@ function render() {
   $('#route-count').textContent = state.routes.length;
   $('#system-state').textContent = !state.connected ? 'منتظر اتصال پنل' : !enabled.length ? 'آمادهٔ ساخت مسیر' : healthy === enabled.length ? 'مسیرها بررسی شده‌اند' : 'در حال بررسی مسیرها';
   $('#empty').hidden = state.routes.length > 0;
+  $('#routes').classList.toggle('existing-layout',state.routes.length>0 && state.routes.every(r=>r.kind==='existing'));
   $('#routes').innerHTML = state.routes.map(route => {
     const status = state.status[route.id] || {}, active = status.active || {};
     const key = !route.enabled ? 'disabled' : status.state || 'checking';
     const label = {primary:'متصل',backup:'خروجی پشتیبان',direct:'اینترنت سرور',offline:'در دسترس نیست',checking:'در حال بررسی',disabled:'غیرفعال'}[key] || key;
     const tone = key === 'primary' ? 'good' : ['backup','direct'].includes(key) ? 'backup' : key === 'offline' ? 'bad' : '';
-    const country = state.countries[route.country];
+    const country = state.countries[route.country] || route.name;
+    if (route.kind === 'existing') {
+      const caps = route.capabilities || [], actualCode = route.country || active.country || '';
+      const title = route.provider === 'existing-psiphon' ? country : route.name === 'Cloudflare WARP' ? route.name : (state.countries[active.country] || route.name);
+      const names = (route.bindings || []).map(b=>b.name);
+      const controls = caps.includes('country') ? `<button class="icon-button" data-action="existing-edit" data-id="${route.id}" title="کشور و پشتیبان" aria-label="تنظیم مسیر موجود">⚙</button>` : '';
+      const reconnect = caps.includes('reconnect') ? `<button class="icon-button" data-action="existing-reconnect" data-id="${route.id}" title="اتصال دوباره به خروجی" aria-label="اتصال دوباره">↻</button>` : '';
+      return `<article class="route-card existing-card"><div class="card-top"><span class="flag">${/^[A-Z]{2}$/.test(actualCode) ? flagIcon(actualCode) : '🌐'}</span><span class="status-pill ${tone}">${label}</span></div><h3>${esc(title)}</h3><div class="card-subtitle"><span class="existing-badge">تنظیمات فعلی سرور</span> ${route.provider === 'existing-psiphon' ? 'Psiphon' : route.name === 'Cloudflare WARP' ? 'کشور خودکار' : 'خروجی مستقیم'}</div><div class="card-metrics"><div><span>تأخیر خروجی وب</span><b>${active.latency_ms != null ? esc(active.latency_ms)+' ms':'—'}</b></div><div><span>کشور فعلی</span><b>${esc(state.countries[active.country] || active.country || '—')}</b></div></div><div class="card-ip">${esc(active.ip || 'WAITING FOR A VERIFIED EXIT')}</div><div class="existing-bindings">${names.slice(0,2).map(n=>`<span>${esc(n)}</span>`).join('')}${names.length>2 ? `<small>و ${fa(names.length-2)} اتصال دیگر</small>`:''}</div><div class="card-footer"><button class="text-button card-host" data-action="host" data-id="${route.id}">${fa(names.length)} کانفیگ مرتبط ↗</button><div class="card-actions">${controls}${reconnect}<button class="icon-button" data-action="remove" data-id="${route.id}" title="خروج از فهرست Atlas؛ سرویس اصلی فعال می‌ماند" aria-label="خروج از فهرست مدیریت">×</button></div></div></article>`;
+    }
     return `<article class="route-card"><div class="card-top"><span class="flag">${flagIcon(route.country)}</span><span class="status-pill ${tone}">${label}</span></div><h3>${esc(country)}</h3><div class="card-subtitle">${route.provider === 'psiphon' ? 'Psiphon · شخصی / دارای مجوز' : 'خروجی اختصاصی · SOCKS5'}</div><div class="card-metrics"><div><span>تأخیر خروجی وب</span><b>${active.latency_ms != null ? esc(active.latency_ms)+' ms' : '—'}</b></div><div><span>کشور فعلی</span><b>${esc(active.country ? state.countries[active.country] || active.country : '—')}</b></div></div><div class="card-ip">${esc(active.ip || 'WAITING FOR A VERIFIED EXIT')}</div><div class="card-footer"><button class="text-button card-host" data-action="host" data-id="${route.id}">اطلاعات Host ↗</button><div class="card-actions"><button class="icon-button" data-action="reconnect" data-id="${route.id}" title="اتصال دوباره / بررسی خروجی" aria-label="اتصال دوباره" ${!route.enabled ? 'disabled' : ''}>↻</button><button class="icon-button" data-action="toggle" data-id="${route.id}" title="${route.enabled ? 'توقف مسیر' : 'فعال‌کردن مسیر'}" aria-label="تغییر وضعیت">${route.enabled ? 'Ⅱ' : '▷'}</button><button class="icon-button" data-action="remove" data-id="${route.id}" title="حذف مسیر" aria-label="حذف مسیر">×</button></div></div></article>`;
   }).join('');
   $('#events').innerHTML = state.events.length ? state.events.slice(0,6).map(event => `<div class="event"><i></i><span>${esc(event.message)}</span><time>${new Date(event.at*1000).toLocaleTimeString('fa-IR', {hour:'2-digit',minute:'2-digit'})}</time></div>`).join('') : '<p>رویداد تازه‌ای ثبت نشده است.</p>';
@@ -92,6 +103,14 @@ async function openAdd() {
 function providerChanged() { const ps = $('input[name=provider]:checked').value === 'psiphon'; $('#psiphon-fields').hidden = !ps; $('#socks-fields').hidden = ps; $('#proxy').required = !ps; }
 function hostInfo(id) {
   const route = state.routes.find(r => r.id === id); if (!route) return;
+  $('#new-host-instructions').hidden = route.kind === 'existing';
+  $('#existing-host-instructions').hidden = route.kind !== 'existing';
+  if (route.kind === 'existing') {
+    $('#host-details').innerHTML = (route.bindings || []).map(binding=>`<div class="host-row"><span>${esc(binding.name)}</span><code>${esc((binding.addresses || []).join(' / ') || 'ورودی اصلی')} · ${esc(binding.port || '')}</code></div>`).join('') || '<p>نام Host مرتبط پیدا نشد؛ تنظیمات ورودی در ثنایی حفظ شده‌اند.</p>';
+    $('#host-dialog h2').textContent = 'اتصال‌های فعلی این خروجی';
+    $('#host-dialog').showModal(); return;
+  }
+  $('#host-dialog h2').textContent = 'کشور را به اشتراک اضافه کن.';
   const values = [['نام Host',route.name],['اینباند موجود',route.inbound_tag],['پورت Host',String(route.entry_port)],['امنیت','همان اینباند / same']];
   $('#host-details').innerHTML = values.map(([key,value]) => `<div class="host-row"><span>${esc(key)}</span><code>${esc(value)}</code><button class="icon-button copy" data-copy="${esc(value)}" title="کپی" aria-label="کپی">⧉</button></div>`).join('');
   $('#host-dialog').showModal();
@@ -100,6 +119,43 @@ document.querySelectorAll('[data-view]').forEach(button => button.onclick = () =
 document.querySelectorAll('.close-dialog').forEach(button => button.onclick = () => button.closest('dialog').close());
 document.querySelectorAll('input[name=provider]').forEach(el => el.onchange = providerChanged);
 $('#setup-button').onclick = () => view('settings'); $('#add-route').onclick = openAdd; $('#empty-add').onclick = openAdd;
+$('#import-existing').onclick = async () => busy($('#import-existing'),async () => {
+  const result=await api('existing'); discoveredExisting=result.routes;
+  const imported=new Set(state.routes.map(r=>r.id));
+  $('#existing-import-list').innerHTML=discoveredExisting.map(route=>`<label class="existing-import-row"><input type="checkbox" value="${route.id}" ${imported.has(route.id)?'disabled':''} checked><span><b>${esc(route.name)}</b><small>${fa((route.bindings||[]).length)} کانفیگ مرتبط${imported.has(route.id)?' · قبلاً وارد شده':''}</small></span></label>`).join('') || '<p>خروجی پشتیبانی‌شده‌ای پیدا نشد.</p>';
+  $('#existing-import-confirm').disabled=!discoveredExisting.some(r=>!imported.has(r.id));
+  $('#existing-import-dialog').showModal();
+});
+$('#existing-import-confirm').onclick = async () => busy($('#existing-import-confirm'),async () => {
+  const ids=[...document.querySelectorAll('#existing-import-list input:checked:not(:disabled)')].map(el=>el.value);
+  await api('existing/import',{ids}); $('#existing-import-dialog').close(); await refresh(); toast('تنظیمات فعلی وارد شد؛ سرویس‌ها و اشتراک‌ها ادامه دارند.');
+});
+async function openExistingEdit(id) {
+  const result=await api('existing'); editingExisting=result.routes.find(r=>r.id===id);
+  if(!editingExisting) throw Error('مسیر موجود پیدا نشد.');
+  $('#existing-edit-title').textContent='تنظیم '+(state.countries[editingExisting.country] || editingExisting.name);
+  $('#existing-country').innerHTML=Object.entries(state.countries).map(([code,name])=>`<option value="${code}">${esc(name)} ${flag(code)}</option>`).join('');
+  $('#existing-country').value=editingExisting.country;
+  $('#existing-fallback').checked=!!editingExisting.fallback_enabled;
+  $('#existing-restore').disabled=!editingExisting.last_backup;
+  $('#existing-edit-form button[type=submit]').disabled=!!editingExisting.pending;
+  $('#existing-edit-bindings').innerHTML=(editingExisting.bindings||[]).map(b=>`<p class="existing-binding-label">${esc(b.name)}</p>`).join('');
+  $('#existing-edit-dialog').showModal();
+}
+const operationId = () => crypto.randomUUID ? crypto.randomUUID().replaceAll('-','') : [...crypto.getRandomValues(new Uint8Array(16))].map(v=>v.toString(16).padStart(2,'0')).join('');
+$('#existing-edit-form').onsubmit = async event => {
+  event.preventDefault(); if(!editingExisting) return;
+  const country=$('#existing-country').value, fallback=$('#existing-fallback').checked;
+  if(country!==editingExisting.country && !await confirmAction('کشور این خروجی عوض شود؟','اتصال‌های باز همین خروجی ممکن است دوباره متصل شوند. نام Hostهای مرتبط هم با کشور انتخاب‌شده هماهنگ می‌شود.')) return;
+  await busy($('#existing-edit-form button[type=submit]'),async () => {
+    await api('existing/configure',{id:editingExisting.id,revision:editingExisting.revision,country,fallback_enabled:fallback,operation:operationId()});
+    $('#existing-edit-dialog').close(); await refresh(); toast('تنظیم خروجی ذخیره شد؛ کشور واقعی پس از تست روی کارت نمایش داده می‌شود.');
+  });
+};
+$('#existing-restore').onclick = async () => {
+  if(!editingExisting?.last_backup || !await confirmAction('تنظیم قبلی همین خروجی برگردد؟','کشور و پشتیبان قبلی برمی‌گردند. اتصال‌های باز همین خروجی ممکن است دوباره ساخته شوند.')) return;
+  await busy($('#existing-restore'),async () => {await api('existing/restore',{id:editingExisting.id,revision:editingExisting.revision,backup:editingExisting.last_backup,operation:operationId()});$('#existing-edit-dialog').close();await refresh();toast('تنظیم قبلی خروجی برگشت داده شد.');});
+};
 $('#login-form').onsubmit = async event => { event.preventDefault(); $('#login-error').textContent = ''; await busy($('#login-form button'), async () => { try { const result = await api('login',{username:$('#login-username').value,password:$('#login-password').value,twoFactorCode:$('#login-twofactor').value}); csrf = result.csrf; $('#login-password').value = ''; $('#login-twofactor').value = ''; await enter(); } catch(e) {$('#login-error').textContent=e.message; throw e;} }); };
 $('#logout').onclick = async () => { try {await api('logout',{}); showLogin();} catch(e) {toast(e.message,true);} };
 $('#panel-form').onsubmit = async event => {event.preventDefault(); await busy($('#panel-form button'),async () => {await api('connect',{url:$('#panel-url').value,token:$('#panel-token').value}); $('#panel-token').value=''; toast('پنل با موفقیت متصل شد. حالا کشور را اضافه کن.'); await refresh(); view('overview');});};
@@ -107,7 +163,14 @@ $('#route-form').onsubmit = async event => {event.preventDefault(); const provid
 $('#routes').onclick = async event => {
   const button=event.target.closest('button[data-action]'); if (!button) return; const {action,id}=button.dataset;
   if(action==='host') return hostInfo(id);
-  if(action==='remove' && !await confirmAction('این مسیر حذف شود؟','ورودی و قانون همین مسیر حذف می‌شود. Host مربوط را هم در پنل غیرفعال یا حذف کن. کاربران و مسیرهای دیگر باقی می‌مانند.')) return;
+  const route=state.routes.find(r=>r.id===id);
+  if(action==='existing-edit') {try {await openExistingEdit(id);} catch(e) {toast(e.message,true);} return;}
+  if(action==='existing-reconnect') {
+    const warning=route.name==='Cloudflare WARP' ? 'این سرویس بین چند مسیر مشترک است. اتصال‌های WARP و تماس‌های UDP مربوط ممکن است قطع و دوباره وصل شوند.' : 'اتصال‌های باز همین خروجی ممکن است قطع و دوباره برقرار شوند. IP تازه تضمین نمی‌شود.';
+    if(!await confirmAction('خروجی دوباره متصل شود؟',warning)) return;
+    return busy(button,async()=>{const fresh=(await api('existing')).routes.find(r=>r.id===id);await api('existing/reconnect',{id,revision:fresh.revision,operation:operationId()});await refresh();toast('اتصال دوباره درخواست شد؛ وضعیت پس از بررسی تازه می‌شود.');});
+  }
+  if(action==='remove' && !await confirmAction(route?.kind==='existing'?'از فهرست مدیریت خارج شود؟':'این مسیر حذف شود؟',route?.kind==='existing'?'فقط از فهرست Atlas خارج می‌شود؛ سرویس، تنظیمات، Hostها و اتصال‌های اصلی فعال می‌مانند.':'ورودی و قانون همین مسیر حذف می‌شود. Host مربوط را هم در پنل غیرفعال یا حذف کن. کاربران و مسیرهای دیگر باقی می‌مانند.')) return;
   if(action==='reconnect' && !await confirmAction('دوباره به خروجی وصل شویم؟','اتصال‌های باز همین خروجی ممکن است قطع شوند. کشور و IP تازه تا بعد از بررسی تأیید نمی‌شود.')) return;
   await busy(button,async () => {await api('routes/'+action,{id}); await refresh(); toast('درخواست انجام شد. وضعیت جدید پس از بررسی نمایش داده می‌شود.');});
 };

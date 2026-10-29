@@ -35,11 +35,11 @@ class Panel:
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(),
             urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
-    def call(self, path, data=None, method=None):
-        body = urllib.parse.urlencode(data or {}).encode() if data is not None else None
+    def call(self, path, data=None, method=None, json_body=False):
+        body = (json.dumps(data).encode() if json_body else urllib.parse.urlencode(data or {}).encode()) if data is not None else None
         req = urllib.request.Request(self.url + 'panel/api/' + path.lstrip('/'), body,
             {'Authorization': 'Bearer ' + self.token, 'Accept': 'application/json',
-             'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest'},
+             'Content-Type': 'application/json' if json_body else 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest'},
             method=method or ('POST' if data is not None else 'GET'))
         try:
             with self.opener.open(req, timeout=35) as response:

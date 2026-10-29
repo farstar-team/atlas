@@ -38,6 +38,8 @@ Dedicated sources `127.77.0.1–32` are added to the native `ipLimitAllowlist`, 
 | Persist and hot-reconcile template | `POST xray/update` (form `xraySetting`, `outboundTestUrl`) |
 | Verify RoutingService responds | `POST xray/routeTest` |
 | Preserve and extend trusted local sources | `POST setting/all`, `POST setting/update` |
+| Associate existing exits with subscription entries | `GET hosts/list` |
+| Rename associated country labels after an explicit country edit | `POST hosts/update/<groupId>` (JSON; remark only changed) |
 
 Only `atlas-<random-id>` outbounds and matching `ruleTag` resources recorded in local state are managed. The template guard rejects edits to DNS, inbounds, policy, users and foreign outbounds. The native settings view redacts secrets; its update API preserves redacted blank secrets. Atlas round-trips the view when extending the IP allowlist, excluding response-only presence flags.
 
@@ -60,6 +62,18 @@ The native API provides no transactional revision precondition. A narrow externa
 
 ## Providers and failover
 
+### Existing external exits (0.3.0)
+
+Adopted resources have `kind: existing`; they never enter Atlas's native-template ownership set, port allocator or provider-spawn lifecycle. Import reads native metadata and stores management references, filtered Host associations and private proxy URLs. Import/remove/uninstall do not stop an external provider or remove its native outbound. Existing Host entries remain usable without subscription refresh.
+
+The root `farstar-atlas-existing` helper reads the native runtime config, exposing only freedom and single-server SOCKS resources. For the known FARSTAR `/opt/irg-country-egress` layout it supports EgressRegion and the matching HAProxy backend's Germany-backup flag. Other provider fields/backends are merged from the current file. Country changes restart only the matching `irg-country-fr/nl` unit; balancer changes use its existing graceful reload. Reconnect for the recognized WARP unit is explicit and does not imply country selection. Generic SOCKS exits are observation-only. No native panel, core or ingress restart command exists in this helper.
+
+The helper has a private network namespace, a root-owned fixed-path manifest, a restricted writable directory and a Unix socket authenticated by peer UID. Requests accept a finite action set with revision checks and operation IDs. Root-owned backups and a pending journal precede mutations; interrupted operations expose recovery metadata on the next state request. Restore merges only the backed-up country/fallback into the freshest files. A remaining external-editor race exists between the last read and atomic replace; do not edit the same files concurrently.
+
+After an explicit country edit, Atlas reads full current Host groups and changes only country names/flags on its recorded associated groups through `hosts/update/<groupId>` (JSON). Custom labels without the old country word are preserved. Transport, authentication, mux, security and port values are round-tripped unchanged. Host-update failure attempts label rollback and restores the prior provider settings. A process crash between the provider operation and Host-label/local-state updates can leave labels stale; verify labels after recovery. Generic Atlas route backups do not restore external provider files; use the adopted card's separate last-settings restore.
+
+Existing-provider health checks probe both the primary and the actual established balancer path, so a healthy primary still waiting for HAProxy's rise threshold does not masquerade as the active exit. These checks never reconnect or restart the external service in the background.
+
 The official Psiphon ConsoleClient runs as a child of the unprivileged Atlas systemd service. It binds a loopback SOCKS port, keeps its own per-route discovery cache, and chooses available servers through its native mechanism. The reviewed Linux x86_64 asset is pinned to a commit and SHA-256 in `providers/psiphon.json`. No binary is bundled in this repository, and no range scanner is included.
 
 Health probes make a validated HTTPS request through each primary provider to Cloudflare's trace endpoint, require a syntactically valid IP and matching requested country, and show cold request duration. This value is **not** an end-user ping or full tunnel throughput. Backup probes show their actual country instead of relabelling it. This release uses one probe destination; an outage or country-classification error there can create a false negative.
@@ -72,6 +86,6 @@ Only TCP CONNECT is supported by the bridge. No SOCKS UDP ASSOCIATE is advertise
 
 Code lives in `/opt/farstar-atlas/releases/<version>-<manifest-hash>` with an atomic `current` symlink. Private state, credentials, engine caches, event SQLite DB and backups live in `/var/lib/farstar-atlas`. The service runs as `farstar-atlas` with read-only system files and no root privileges. Entry ports are deliberately restricted to 1024–60999, avoiding a privileged bind capability.
 
-Updates validate a complete staged source, atomically switch releases, restart only Atlas and check its admin HTTP health. Failed activation restores the prior code/unit. State schema 1 has no destructive migration. Atlas connection streams may reconnect during its own restart. Upstream 3x-ui updates do not overwrite Atlas code; breaking native API changes may still require an Atlas update.
+Updates validate a complete staged source, atomically switch releases, restart Atlas and its local controller helper, and check admin HTTP/helper health. Failed activation restores the prior code/units. External adopted providers are not restarted. State schema 1 has no destructive migration. Atlas-owned connection streams may reconnect during its own restart. Upstream 3x-ui updates do not overwrite Atlas code; breaking native API changes may still require an Atlas update.
 
 Uninstall stops Atlas, detaches managed resources through the API, and removes the service/launcher only after success. State/code/backups are retained. User-created native Hosts remain the operator's responsibility.

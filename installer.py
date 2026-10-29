@@ -80,6 +80,61 @@ Unit=farstar-atlas-certificates.service
 WantedBy=timers.target
 '''
 
+EXISTING_UNIT = '''[Unit]
+Description=Atlas restricted controller for existing country exits
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=farstar-atlas
+WorkingDirectory=/opt/farstar-atlas/current
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m atlas.existing
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=farstar-atlas-existing
+RuntimeDirectoryMode=0750
+StateDirectory=farstar-atlas-existing
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=-/opt/irg-country-egress
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
+def install_existing_helper(access_path, gid, write_root):
+    config = {'native_config': '/usr/local/x-ui/bin/config.json', 'country_root': '/opt/irg-country-egress',
+        'haproxy_binary': '/opt/irg-tls-runtime/usr/sbin/haproxy' if Path('/opt/irg-tls-runtime/usr/sbin/haproxy').is_file() else '/usr/sbin/haproxy',
+        'library_path': '/opt/irg-tls-runtime/usr/lib/x86_64-linux-gnu' if Path('/opt/irg-tls-runtime/usr/lib/x86_64-linux-gnu').is_dir() else ''}
+    # Never accept helper paths/units from browser or service-user state.
+    write_root(access_path.parent/'existing.json', json.dumps(config, indent=2).encode(), gid)
+    target = Path('/etc/systemd/system/farstar-atlas-existing.service')
+    target.write_text(EXISTING_UNIT); target.chmod(0o644)
+    run(['systemctl', 'daemon-reload'])
+    run(['systemctl', 'enable', 'farstar-atlas-existing.service'], stdout=subprocess.DEVNULL)
+    run(['systemctl', 'restart', 'farstar-atlas-existing.service'])
+    for _ in range(30):
+        try:
+            from atlas.existing import ExistingClient
+            ExistingClient().inventory()
+            return
+        except (OSError, ValueError):
+            time.sleep(.2)
+    raise RuntimeError('Existing-exit helper did not become healthy.')
+
 
 def probe_web(access, private_port=9786):
     """Connect over loopback while validating the real public Host and TLS."""
@@ -116,7 +171,7 @@ def checked_files(source):
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise RuntimeError('Checksum mismatch: ' + name)
         records.append(name)
-    required = {'atlas/__main__.py', 'atlas/server.py', 'web/index.html', 'providers/psiphon.json', 'VERSION'}
+    required = {'atlas/__main__.py', 'atlas/server.py', 'atlas/existing.py', 'web/index.html', 'providers/psiphon.json', 'VERSION'}
     if not required.issubset(records):
         raise RuntimeError('Incomplete manifest')
     return records
@@ -194,6 +249,10 @@ def main():
     old = (root/'current').resolve() if (root/'current').is_symlink() else None
     old_unit = Path('/etc/systemd/system/farstar-atlas.service')
     old_unit_bytes = old_unit.read_bytes() if old_unit.exists() else None
+    helper_unit = Path('/etc/systemd/system/farstar-atlas-existing.service')
+    helper_bytes = helper_unit.read_bytes() if helper_unit.exists() else None
+    helper_was_active = subprocess.run(['systemctl', 'is-active', '--quiet', 'farstar-atlas-existing'],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     access_path = Path('/etc/farstar-atlas/access.json')
     old_access_bytes = access_path.read_bytes() if access_path.exists() else None
     old_access = json.loads(old_access_bytes) if old_access_bytes else None
@@ -237,6 +296,7 @@ def main():
     launcher.chmod(0o755)
     run(['systemctl', 'daemon-reload'])
     try:
+        install_existing_helper(access_path, gid, write_root)
         run(['systemctl', 'enable', 'farstar-atlas.service'], stdout=subprocess.DEVNULL)
         run(['systemctl', 'restart', 'farstar-atlas.service'])
         for attempt in range(20):
@@ -256,6 +316,12 @@ def main():
         else:
             subprocess.run(['systemctl', 'disable', '--now', 'farstar-atlas-certificates.timer'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except BaseException:
+        subprocess.run(['systemctl', 'stop', 'farstar-atlas-existing'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if helper_bytes is not None:
+            helper_unit.write_bytes(helper_bytes)
+        else:
+            subprocess.run(['systemctl', 'disable', 'farstar-atlas-existing'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            helper_unit.unlink(missing_ok=True)
         if old_access_bytes is not None:
             write_root(access_path, old_access_bytes, gid)
             sync_certificates(access_path)
@@ -266,6 +332,8 @@ def main():
             if old_unit_bytes is not None:
                 old_unit.write_bytes(old_unit_bytes)
             run(['systemctl', 'daemon-reload'])
+            if helper_was_active and helper_bytes is not None:
+                run(['systemctl', 'restart', 'farstar-atlas-existing'])
             run(['systemctl', 'restart', 'farstar-atlas.service'])
         else:
             subprocess.run(['systemctl', 'stop', 'farstar-atlas.service'])

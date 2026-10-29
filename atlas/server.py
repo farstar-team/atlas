@@ -184,6 +184,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self.send(200, result)
                 if path == '/api/inbounds':
                     return self.send(200, self.server.manager.panel().inbounds())
+                if path == '/api/existing':
+                    from .existing import public_route
+                    return self.send(200, {'routes': [public_route(r) for r in self.server.manager.discover_existing()]})
             except Exception as exc:
                 return self.error(exc)
             return self.send(404, {'error': 'پیدا نشد.'})
@@ -264,6 +267,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send(200, {'inbounds': manager.connect(data)})
             if path == '/api/routes/add':
                 return self.send(200, {'id': manager.add(data)})
+            if path == '/api/existing/import':
+                return self.send(200, {'ids': manager.import_existing(data.get('ids'))})
+            if path in ('/api/existing/configure', '/api/existing/reconnect', '/api/existing/restore'):
+                return self.send(200, {'route': manager.change_existing(str(data.get('id', '')), path.rsplit('/', 1)[1], data)})
             if path in ('/api/routes/remove', '/api/routes/toggle', '/api/routes/reconnect'):
                 rid = str(data.get('id', ''))
                 if not any(r['id'] == rid for r in manager.store.read()['routes']):

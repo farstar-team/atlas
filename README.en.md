@@ -32,6 +32,14 @@ Configured public IP aliases are accepted too. The native certificate must cover
 
 Connect the panel with its complete base URL and Admin API token for background route management. Add a country, owned SOCKS endpoint and existing TCP inbound. Atlas creates the entry/outbound/rule. Use the card's Host details to add a native Host using that entry port, then refresh Happ's subscription. Ports must be reachable through your firewall and any existing Iran-to-foreign tunnel.
 
+## Adopt existing exits — 0.3.0
+
+Choose **Import server settings** to link existing native freedom/single-server SOCKS outbounds to Atlas. Adoption is passive: it does not rewrite native routing, Hosts, clients or ports, bind another listener, or restart an existing provider. Cards show associated subscription entries and verified egress health.
+
+For the previously installed FARSTAR country services, the settings button changes the requested country and existing Germany fallback, with a separate last-settings restore. Explicit country changes restart only that provider and gracefully reload its existing country balancer; open streams on that provider can reconnect. Associated Host country labels/flags are updated through the native API while preserving transport/security fields. WARP remains automatic-country; direct egress retains the server's physical location. Unknown SOCKS services are observation-only.
+
+The unprivileged UI uses a restricted local root helper for known external services; arbitrary units, commands and paths are not accepted. Untracking an adopted card or uninstalling Atlas leaves the original provider/routing intact. This is not a universal tunnel/configuration migration. See [architecture](docs/architecture.md) for scope and [operations](docs/operations.fa.md) for recovery.
+
 Only **TCP destination ports 80 and 443** use the new exit. UDP and other ports retain the existing route. IPv6 depends on the exit and is not covered by this release's probe. Atlas does not create the inter-server tunnel or guarantee calls, games, a new IP, nationwide-outage access or uninterrupted operation.
 
 Real HTTPS probes verify egress IP and requested country. Explicit SOCKS/direct fallback applies only to new connections, and its actual country is displayed. A reconnect can close active provider streams; no existing stream migration is promised.

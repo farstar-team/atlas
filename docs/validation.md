@@ -1,3 +1,17 @@
+# Existing exit management validation — 0.3.0, 2026-10-29
+
+77 automated tests cover the previous behavior plus passive adoption, exclusion from native template ownership, preserved Host/security metadata, root-controller command restrictions, stale revisions, operation idempotency, backup scoping, failure rollback, crash-recovery metadata and truthful active-backup reporting. The native configuration is asserted unchanged during controller tests.
+
+Chrome exercised discovery, importing four fixture exits, country/fallback editing, restoration, unchanged Host fields, WARP reconnect cancellation, linked-configuration help and 390 px mobile rendering with no JavaScript errors or horizontal overflow. New screenshots are explicitly labelled fixture data.
+
+The installed restricted root helper was exercised through its real Unix socket from the unprivileged Atlas UID in an expendable Linux VM. Real protected files and disposable systemd providers were used: no-op preserved the provider PID, a country change replaced only the intended region/backend, and restore recovered the prior settings. An unrelated UID sharing the socket group was rejected. These were synthetic providers, not evidence of Internet country connectivity.
+
+Separately, the actual production HAProxy binary validated four staged country/fallback variants without changing the original config or restarting services. The other country's backend remained unchanged. Active country settings are not changed merely to validate deployment.
+
+Import adds management references to existing exits; it does not prove outage resilience or upgrade external tunnel software. Explicit edits can reconnect streams on the affected provider. A process crash across separate provider/Host updates can leave labels stale; the architecture and operations guides describe recovery limits.
+
+---
+
 # Public access validation — 0.2.0, 2026-10-29
 
 57 automated tests pass, including native-session authentication, native login/2FA forwarding, per-request revocation, CSRF bound to cookie/origin, public Host allowlists, nested-path assets, read-only SQLite discovery and public address discovery.

@@ -142,6 +142,13 @@ class Runtime:
         for rid, route in desired.items():
             if rid in self.entries:
                 continue
+            if route.get('kind') == 'existing':
+                # Observe the installed listeners and processes. Never bind,
+                # replace, terminate or take ownership of their live traffic.
+                self.entries[rid] = {'route': copy.deepcopy(route), 'servers': [], 'process': None,
+                    'last_restart': time.monotonic()}
+                self.status[rid] = {'healthy': False, 'state': 'checking'}
+                continue
             servers = []
             process = None
             try:
@@ -168,6 +175,8 @@ class Runtime:
 
     async def check_one(self, route):
         rid = route['id']
+        if route.get('kind') == 'existing':
+            return await self.check_existing(route)
         primary = ('socks5h://127.0.0.1:' + str(route['provider_port'])) if route['provider'] == 'psiphon' else route['proxy']
         main = await probe(primary, route['country'])
         selected, active, state = None, {}, 'offline'
@@ -208,6 +217,27 @@ class Runtime:
                     await process.wait()
             item['process'] = await self.spawn(route)
             item['last_restart'] = time.monotonic()
+
+    async def check_existing(self, route):
+        primary = await probe(route.get('primary_proxy') or route.get('proxy') or '', route.get('country', ''))
+        active = primary
+        if route.get('primary_proxy'):
+            # Check the real installed HAProxy path too: the engine may have
+            # recovered while the existing health-check rise delay still uses
+            # its backup. Show the actual selected egress, not an assumption.
+            active = await probe(route['proxy'])
+        state = 'offline'
+        if active.get('ok'):
+            state = 'backup' if route.get('country') and active.get('country') != route['country'] else 'primary'
+        async with self.lifecycle_lock:
+            rid = route['id']
+            if rid not in self.entries or self.entries[rid]['route'] != route:
+                return
+            old = self.status.get(rid, {})
+            self.status[rid] = {'healthy': bool(active.get('ok')), 'state': state,
+                'primary': primary, 'active': active if active.get('ok') else {}, 'checked_at': time.time()}
+            if old.get('state') != state:
+                self.store.event('route', 'مسیر موجود ' + route.get('name', '') + ': ' + state)
 
     async def check_all(self):
         async with self.probe_lock:

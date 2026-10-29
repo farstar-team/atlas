@@ -1,6 +1,15 @@
 'use strict';
 const $ = s => document.querySelector(s);
-let csrf = '', state = null, inbounds = [], refreshing = false, toastTimer;
+const appBase = new URL('.', document.currentScript.src).pathname;
+let csrf = '', state = null, inbounds = [], refreshing = false, toastTimer, loginMode = 'password';
+function configureLogin(mode) {
+  loginMode = mode;
+  const native = mode === 'panel';
+  $('#username-field').hidden = !native; $('#login-username').required = native;
+  $('#twofactor-field').hidden = !native;
+  $('#login-description').textContent = native ? 'با همان نام کاربری و رمز پنل ثنایی وارد شو.' : 'رمز مستقل Atlas را که هنگام نصب خصوصی دریافت کردی وارد کن.';
+  $('#login-hint').textContent = native ? 'ورود قبلی ثنایی در همین مرورگر و همین آدرس، اینجا هم معتبر است.' : 'این نصب از ورود خصوصی Atlas استفاده می‌کند.';
+}
 const fa = n => Number(n).toLocaleString('fa-IR');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const flag = c => [...c].map(x => String.fromCodePoint(x.charCodeAt(0) + 127397)).join('');
@@ -12,8 +21,9 @@ function flagIcon(code) {
 }
 function toast(message, error=false) { const el = $('#toast'); el.textContent = message; el.classList.toggle('error-toast', error); el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, error ? 12000 : 6000); }
 async function api(path, body) {
-  const response = await fetch('/api/' + path, {credentials:'same-origin', cache:'no-store', headers:body ? {'Content-Type':'application/json','X-Atlas-CSRF':csrf} : {}, method:body ? 'POST' : 'GET', body:body ? JSON.stringify(body) : undefined});
+  const response = await fetch(appBase + 'api/' + path, {credentials:'same-origin', cache:'no-store', headers:body ? {'Content-Type':'application/json','X-Atlas-CSRF':csrf} : {}, method:body ? 'POST' : 'GET', body:body ? JSON.stringify(body) : undefined});
   const result = await response.json();
+  if (result.mode) configureLogin(result.mode);
   if (!response.ok) { if (response.status === 401 && path !== 'login') showLogin(); throw Error(result.error || 'درخواست کامل نشد.'); }
   return result;
 }
@@ -90,7 +100,7 @@ document.querySelectorAll('[data-view]').forEach(button => button.onclick = () =
 document.querySelectorAll('.close-dialog').forEach(button => button.onclick = () => button.closest('dialog').close());
 document.querySelectorAll('input[name=provider]').forEach(el => el.onchange = providerChanged);
 $('#setup-button').onclick = () => view('settings'); $('#add-route').onclick = openAdd; $('#empty-add').onclick = openAdd;
-$('#login-form').onsubmit = async event => { event.preventDefault(); $('#login-error').textContent = ''; await busy($('#login-form button'), async () => { try { const result = await api('login',{password:$('#login-password').value}); csrf = result.csrf; $('#login-password').value = ''; await enter(); } catch(e) {$('#login-error').textContent=e.message; throw e;} }); };
+$('#login-form').onsubmit = async event => { event.preventDefault(); $('#login-error').textContent = ''; await busy($('#login-form button'), async () => { try { const result = await api('login',{username:$('#login-username').value,password:$('#login-password').value,twoFactorCode:$('#login-twofactor').value}); csrf = result.csrf; $('#login-password').value = ''; $('#login-twofactor').value = ''; await enter(); } catch(e) {$('#login-error').textContent=e.message; throw e;} }); };
 $('#logout').onclick = async () => { try {await api('logout',{}); showLogin();} catch(e) {toast(e.message,true);} };
 $('#panel-form').onsubmit = async event => {event.preventDefault(); await busy($('#panel-form button'),async () => {await api('connect',{url:$('#panel-url').value,token:$('#panel-token').value}); $('#panel-token').value=''; toast('پنل با موفقیت متصل شد. حالا کشور را اضافه کن.'); await refresh(); view('overview');});};
 $('#route-form').onsubmit = async event => {event.preventDefault(); const provider=$('input[name=provider]:checked').value; if(provider==='psiphon' && !state.engine_installed) return toast('ابتدا از تنظیمات، موتور Psiphon را نصب کن.',true); await busy($('#route-form button[type=submit]'),async () => {const result=await api('routes/add',{country:$('#country').value,provider,inbound_id:Number($('#inbound').value),entry_port:$('#entry-port').value ? Number($('#entry-port').value) : null,proxy:$('#proxy').value,fallback_proxy:$('#fallback-proxy').value,allow_direct_fallback:$('#direct-fallback').checked,psiphon_authorized:$('#psiphon-consent').checked}); $('#route-dialog').close(); $('#proxy').value=''; $('#fallback-proxy').value=''; toast('مسیر ساخته شد. حالا Host آن را به پنل اضافه کن.'); await refresh(); hostInfo(result.id); });};

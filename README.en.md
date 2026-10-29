@@ -20,13 +20,17 @@ As root:
 bash <(curl -fsSL https://raw.githubusercontent.com/farstar-team/atlas/main/install.sh)
 ```
 
-Save the generated Atlas password. On your computer, open an SSH forward:
+The installer discovers the native panel's public hostname/IP, base path and certificate. Open the printed public URL on any phone or computer; everyday use requires no SSH forwarding. Example:
 
 ```bash
-ssh -L 9786:127.0.0.1:9786 root@YOUR_SERVER -p YOUR_SSH_PORT
+https://YOUR_PANEL_DOMAIN:9786/YOUR_PANEL_PATH/atlas/
 ```
 
-Visit **http://127.0.0.1:9786**. Connect the panel with its complete base URL and Admin API token. Add a country, owned SOCKS endpoint and existing TCP inbound. Atlas creates the entry/outbound/rule. Use the card's Host details to add a native Host using that entry port, then refresh Happ's subscription. Ports must be reachable through your firewall and any existing Iran-to-foreign tunnel.
+Login uses the **existing 3x-ui account**, like ZARIB. Existing native sessions on the same hostname/browser sign in automatically; new devices can enter the native username/password and optional 2FA code directly in Atlas. No extra Atlas password is required. Passwords are forwarded only to the local native login endpoint and never stored. Native revocation takes effect on the next protected request.
+
+Configured public IP aliases are accepted too. The native certificate must cover the address used by the browser; use the panel domain for valid HTTPS when its certificate is domain-only. Atlas preserves the native HTTP/HTTPS scheme and automatically refreshes restricted TLS copies. The firewall is preserved. Legacy private/password mode is an explicit installer `--private` option.
+
+Connect the panel with its complete base URL and Admin API token for background route management. Add a country, owned SOCKS endpoint and existing TCP inbound. Atlas creates the entry/outbound/rule. Use the card's Host details to add a native Host using that entry port, then refresh Happ's subscription. Ports must be reachable through your firewall and any existing Iran-to-foreign tunnel.
 
 Only **TCP destination ports 80 and 443** use the new exit. UDP and other ports retain the existing route. IPv6 depends on the exit and is not covered by this release's probe. Atlas does not create the inter-server tunnel or guarantee calls, games, a new IP, nationwide-outage access or uninterrupted operation.
 
@@ -42,6 +46,6 @@ bash /opt/farstar-atlas/current/uninstall.sh
 
 Managed panel resources are detached first. User state/backups remain under `/var/lib/farstar-atlas`; delete manually-created Hosts in the panel. If detach fails, uninstall stops and restarts Atlas for recovery.
 
-Atlas never writes panel source files or accesses its SQL database. Updates can preserve integration because persistent changes live in the official Xray template API, but this is not a guarantee against future breaking API changes. Never edit the same template concurrently through the panel and Atlas: the native API does not provide an atomic compare-and-swap endpoint.
+Atlas never writes panel source files or changes panel SQL records during installation. The installer reads only web settings from SQLite/local PostgreSQL, or reuses existing ZARIB web metadata; the running daemon never accesses SQL. Persistent route changes use the official Xray template API. Future breaking API changes may still need an Atlas update. Never edit the same template concurrently through the panel and Atlas; the native API has no atomic compare-and-swap endpoint.
 
 See [operations](docs/operations.fa.md), [security](SECURITY.md), [development](docs/development.md) and [MIT license](LICENSE).

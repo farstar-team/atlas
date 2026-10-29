@@ -7,9 +7,10 @@ if [[ ! -d /run/systemd/system ]] || ! command -v apt-get >/dev/null; then
 fi
 printf '\n  FARSTAR / ATLAS — Independent country exits\n\n'
 missing=()
-for package in python3 curl ca-certificates; do
+for package in python3 curl ca-certificates iproute2; do
   if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q '^install ok installed$'; then missing+=("$package"); fi
 done
+if ! command -v psql >/dev/null; then missing+=(postgresql-client); fi
 if (( ${#missing[@]} )); then
   export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
   apt-get -q update

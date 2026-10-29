@@ -9,6 +9,10 @@ import subprocess
 import sys
 import time
 import urllib.request
+import http.client
+import json
+import ssl
+import socket
 
 
 UNIT = '''[Unit]
@@ -46,6 +50,55 @@ TasksMax=512
 [Install]
 WantedBy=multi-user.target
 '''
+
+CERT_UNIT = '''[Unit]
+Description=Refresh Atlas copies of the native panel TLS certificate
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/farstar-atlas/current
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m atlas.certificates --config /etc/farstar-atlas/access.json
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/etc/farstar-atlas/tls
+'''
+
+CERT_TIMER = '''[Unit]
+Description=Refresh Atlas panel TLS certificate copies
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=farstar-atlas-certificates.service
+
+[Install]
+WantedBy=timers.target
+'''
+
+
+def probe_web(access, private_port=9786):
+    """Connect over loopback while validating the real public Host and TLS."""
+    if not access:
+        access = {'hostname': '127.0.0.1', 'scheme': 'http', 'port': private_port, 'base_path': '/'}
+    if access['scheme'] == 'https':
+        context = ssl.create_default_context(cafile=access['cert_file'])
+        context.verify_flags |= getattr(ssl, 'VERIFY_X509_PARTIAL_CHAIN', 0)
+        connection = http.client.HTTPSConnection(access['panel_hostname'], access['port'], context=context, timeout=3)
+    else:
+        connection = http.client.HTTPConnection(access['hostname'], access['port'], timeout=3)
+    connection._create_connection = lambda *a, **k: socket.create_connection(('127.0.0.1', access['port']), timeout=3)
+    try:
+        connection.request('GET', '/healthz', headers={'Host': access['hostname'] + ':' + str(access['port'])})
+        response = connection.getresponse()
+        if response.status != 200 or not json.loads(response.read(4096)).get('ok'):
+            raise RuntimeError('Atlas health check failed')
+    finally:
+        connection.close()
 
 
 def run(args, **kwargs):
@@ -119,6 +172,11 @@ def main():
     parser.add_argument('--source', type=Path, default=Path(__file__).parent)
     parser.add_argument('--root', type=Path, default=Path('/opt/farstar-atlas'))
     parser.add_argument('--stage-only', action='store_true', help='Package verification for isolated tests; never touches services')
+    parser.add_argument('--private', action='store_true', help='Opt into legacy loopback/password administration')
+    parser.add_argument('--host', help='Public panel hostname or IP; detected automatically by default')
+    parser.add_argument('--web-port', type=int)
+    parser.add_argument('--panel-db', type=Path)
+    parser.add_argument('--panel-unit', default='x-ui.service')
     args = parser.parse_args()
     if not args.stage_only and (os.name != 'posix' or os.geteuid() != 0):
         parser.error('Run as root on Linux.')
@@ -136,13 +194,41 @@ def main():
     old = (root/'current').resolve() if (root/'current').is_symlink() else None
     old_unit = Path('/etc/systemd/system/farstar-atlas.service')
     old_unit_bytes = old_unit.read_bytes() if old_unit.exists() else None
+    access_path = Path('/etc/farstar-atlas/access.json')
+    old_access_bytes = access_path.read_bytes() if access_path.exists() else None
+    old_access = json.loads(old_access_bytes) if old_access_bytes else None
+    access = None
+    if not args.private:
+        from atlas.discovery import discover
+        access = discover(args, old_access)
     if subprocess.run(['id', '-u', 'farstar-atlas'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
         run(['useradd', '--system', '--home-dir', '/var/lib/farstar-atlas', '--shell', '/usr/sbin/nologin', 'farstar-atlas'])
     state = Path('/var/lib/farstar-atlas')
     state.mkdir(mode=0o700, exist_ok=True)
     shutil.chown(state, user='farstar-atlas', group='farstar-atlas')
     state.chmod(0o700)
-    run(['runuser', '-u', 'farstar-atlas', '--', '/usr/bin/python3', '-m', 'atlas', '--state', str(state), 'init'], cwd=release)
+    run(['runuser', '-u', 'farstar-atlas', '--', '/usr/bin/python3', '-m', 'atlas', '--state', str(state), 'init'], cwd=release,
+        stdout=None if args.private else subprocess.PIPE)
+    from atlas.certificates import sync as sync_certificates, write as write_root
+    import grp
+    gid = grp.getgrnam('farstar-atlas').gr_gid
+    access_path.parent.mkdir(mode=0o750, exist_ok=True)
+    if access_path.parent.is_symlink() or access_path.parent.stat().st_uid != 0 or access_path.parent.stat().st_mode & 0o022:
+        raise RuntimeError('Unsafe Atlas access directory')
+    os.chown(access_path.parent, 0, gid); access_path.parent.chmod(0o750)
+    if access:
+        access.update(cert_file=str(access_path.parent/'tls/panel.pem'), key_file=str(access_path.parent/'tls/panel.key'))
+        write_root(access_path, json.dumps(access, indent=2).encode(), gid)
+        try:
+            sync_certificates(access_path)
+        except BaseException:
+            if old_access_bytes is not None:
+                write_root(access_path, old_access_bytes, gid)
+            else:
+                access_path.unlink(missing_ok=True)
+            raise
+    else:
+        access_path.unlink(missing_ok=True)
     point(root, release)
     old_unit.write_text(UNIT)
     old_unit.chmod(0o644)
@@ -153,17 +239,28 @@ def main():
     try:
         run(['systemctl', 'enable', 'farstar-atlas.service'], stdout=subprocess.DEVNULL)
         run(['systemctl', 'restart', 'farstar-atlas.service'])
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for attempt in range(20):
             try:
-                with opener.open('http://127.0.0.1:9786/healthz', timeout=2) as response:
-                    if response.status == 200:
-                        break
-            except OSError:
+                probe_web(access, private_port=json.loads((state/'config.json').read_text()).get('port', 9786))
+                break
+            except (OSError, ValueError, RuntimeError, http.client.HTTPException):
                 time.sleep(0.5)
         else:
             raise RuntimeError('Atlas health check failed')
+        if access and access['scheme'] == 'https':
+            for name, content in (('farstar-atlas-certificates.service', CERT_UNIT), ('farstar-atlas-certificates.timer', CERT_TIMER)):
+                path = Path('/etc/systemd/system')/name
+                path.write_text(content); path.chmod(0o644)
+            run(['systemctl', 'daemon-reload'])
+            run(['systemctl', 'enable', '--now', 'farstar-atlas-certificates.timer'], stdout=subprocess.DEVNULL)
+        else:
+            subprocess.run(['systemctl', 'disable', '--now', 'farstar-atlas-certificates.timer'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except BaseException:
+        if old_access_bytes is not None:
+            write_root(access_path, old_access_bytes, gid)
+            sync_certificates(access_path)
+        else:
+            access_path.unlink(missing_ok=True)
         if old:
             point(root, old)
             if old_unit_bytes is not None:
@@ -173,9 +270,15 @@ def main():
         else:
             subprocess.run(['systemctl', 'stop', 'farstar-atlas.service'])
         raise
-    print('\nAtlas is ready. Its admin UI is private by default.')
-    print('From your computer: ssh -L 9786:127.0.0.1:9786 root@YOUR_SERVER -p YOUR_SSH_PORT')
-    print('Then open http://127.0.0.1:9786')
+    if access:
+        print('\nAtlas is ready. Sign in using your existing 3x-ui account.')
+        print('URL: ' + access['scheme'] + '://' + access['hostname'] + ':' + str(access['port']) + access['base_path'])
+        for ip in access['hosts']:
+            if ip != access['hostname']:
+                print('Alias: ' + access['scheme'] + '://' + ip + ':' + str(access['port']) + access['base_path'])
+        print('HTTPS aliases require the native certificate to cover that IP or hostname, just like the original panel.')
+    else:
+        print('\nAtlas private UI: http://127.0.0.1:9786 (SSH forwarding required).')
     print('Updates restart Atlas only; active Atlas streams may reconnect. x-ui is never explicitly restarted.')
 
 

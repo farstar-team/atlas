@@ -1,6 +1,14 @@
 # Architecture and compatibility contract
 
-Atlas is an independent Python standard-library daemon. It uses the native 3x-ui API and never opens the panel's SQL database, rewrites upstream code, edits existing inbound credentials, resets traffic counters, or installs a statistics gateway.
+Atlas is an independent Python standard-library daemon. Its runtime uses the native API, never opens panel SQL, rewrites upstream code, edits existing inbound credentials, resets traffic counters, or installs a statistics gateway. During installation only, it reads a fixed set of web settings from SQLite/local PostgreSQL or existing ZARIB metadata. SQL discovery is read-only and creates no roles or tokens.
+
+## Public access and native login (0.2.0)
+
+The default public IPv4 listener uses a dedicated port (9786, with free-port alternatives) and `<native-base>/atlas/`, preserving native cookie path scope. Static assets/API requests use relative paths. Public Host aliases are discovered explicitly; arbitrary Host and Origin values remain rejected. A custom public port is included in activation health checks.
+
+Existing native cookies are revalidated through the local native panel for every protected request. For a new device, Atlas obtains native pre-login CSRF, forwards username/password/optional TOTP to native `/login`, validates the returned cookie and sets the same host-only native cookie in the browser. Passwords and TOTP codes are not persisted. Background Admin tokens cannot substitute for browser authentication. Atlas CSRF is an HMAC of native cookie and public origin; native logout/revocation is reflected on the next request. Atlas logout expires both native base-path and legacy root cookies on the current host.
+
+The service inherits the native HTTP/HTTPS scheme. Root-owned access metadata and restricted certificate copies live under `/etc/farstar-atlas`. A root certificate-sync oneshot/timer validates the original pair, refreshes the copies and leaves source permissions unchanged. The unprivileged daemon reloads valid TLS pairs for new handshakes without restarting; a transient mismatched renewal retains the prior context. Domain-only certificates do not automatically cover IP aliases. `--private` explicitly opts back into legacy loopback/password access.
 
 ```mermaid
 flowchart LR

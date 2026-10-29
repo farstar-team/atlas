@@ -1,3 +1,13 @@
+# Public access validation — 0.2.0, 2026-10-29
+
+57 automated tests pass, including native-session authentication, native login/2FA forwarding, per-request revocation, CSRF bound to cookie/origin, public Host allowlists, nested-path assets, read-only SQLite discovery and public address discovery.
+
+A real isolated 3x-ui 3.11.0 instance with HTTPS and TOTP enabled was used with the installed unprivileged systemd service. Requests reached Atlas over the VM's non-loopback IP with verified TLS. Wrong TOTP was rejected; correct native credentials/TOTP issued a native secure cookie and authorized Atlas. Logout cleared the shared native cookie. The certificate-refresh service succeeded, root-owned access metadata rejected service-user writes, and the original key permissions remained unchanged. No SSH forward was used for these tests.
+
+The 0.1.0 validation below remains the evidence for unchanged routing/accounting behavior. This update changes administration access and login, not the VPN relay or user-accounting implementation.
+
+---
+
 # Validation — 2026-10-29
 
 Release: **0.1.0**. Tests ran locally and inside an expendable Linux VM; no production customer server was changed to validate this release.

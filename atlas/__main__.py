@@ -7,6 +7,7 @@ import secrets
 import signal
 import ssl
 import threading
+import json
 
 from . import __version__
 from .manager import Manager
@@ -24,6 +25,8 @@ def main():
     parser.add_argument('--hostname')
     parser.add_argument('--cert')
     parser.add_argument('--key')
+    parser.add_argument('--access-config', default='/etc/farstar-atlas/access.json')
+    parser.add_argument('--private', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
     if args.command == 'init':
@@ -86,18 +89,21 @@ def main():
             print('Pending operation recovered.')
             return
         config = store.read()
-        listen, port = args.listen or config['listen'], args.port or config['port']
+        access = {}
+        if not args.private and Path(args.access_config).is_file():
+            access = json.loads(Path(args.access_config).read_text(encoding='utf-8'))
+        listen, port = args.listen or access.get('listen') or config['listen'], args.port or access.get('port') or config['port']
         if args.hostname:
             config['public_hostname'] = args.hostname
             store.save(config)
-        if listen not in ('localhost', '127.0.0.1') and not (args.cert and args.key):
+        if listen not in ('localhost', '127.0.0.1') and not access and not (args.cert and args.key):
             raise ValueError('Public Atlas UI requires --cert and --key. Use an SSH forward for loopback.')
-        server = Server((listen, port), manager, tls=bool(args.cert))
-        if args.cert:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            context.load_cert_chain(args.cert, args.key)
-            server.socket = context.wrap_socket(server.socket, server_side=True)
+        if args.cert and args.key:
+            access.update(cert_file=args.cert, key_file=args.key, scheme='https')
+        tls = access.get('scheme') == 'https'
+        server = Server((listen, port), manager, tls=tls, access=access)
+        if tls:
+            server.context()
         if manager.pending.exists():
             store.event('error', 'عملیات نیمه‌تمام شناسایی شد؛ از تنظیمات بازیابی کنید.')
         def stop(*_):

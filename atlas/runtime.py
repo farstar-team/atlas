@@ -112,6 +112,7 @@ class Runtime:
             'NetworkID': 'ATLAS', 'EstablishTunnelTimeoutSeconds': 90})
         atomic_json(root / 'config.json', config)
         return await asyncio.create_subprocess_exec(str(executable), '-config', str(root / 'config.json'),
+            cwd=str(root),
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
             env={k: v for k, v in os.environ.items() if 'proxy' not in k.lower()})
 

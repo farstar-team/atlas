@@ -1,3 +1,9 @@
+# Provider working directory fix — 0.4.1, 2026-10-29
+
+Provider subprocesses now start in their private per-route state directory rather than inheriting the daemon release directory. This avoids current-directory failures after release replacement/mount isolation and keeps provider-relative files writable and isolated. A POSIX regression launches a real child from a deleted parent working directory and verifies that its file is written only inside provider state. The case is skipped on Windows; prior network/Host/adoption coverage is retained.
+
+---
+
 # Host administration validation — 0.4.0, 2026-10-29
 
 93 automated tests pass. New coverage includes native Host creation/edit/clone/delete, preserved advanced metadata/SNI pools, disabled-inbound associations, stale revisions, strict editable fields, idempotent operation IDs, committed-write timeout reconciliation, incomplete-operation recovery and external-engine detection.

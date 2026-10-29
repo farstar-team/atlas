@@ -1,5 +1,7 @@
 import asyncio
 import copy
+import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +14,28 @@ from tests.test_core import route
 
 
 class NetworkTests(unittest.IsolatedAsyncioTestCase):
+    @unittest.skipUnless(os.name == 'posix', 'Executable provider fixture requires POSIX')
+    async def test_provider_starts_in_private_state_even_when_parent_cwd_disappeared(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            atomic_json(root/'config.json', {'routes': []})
+            engine = root/'engine'; engine.mkdir()
+            atomic_json(engine/'public-config.json', {})
+            executable = engine/'ConsoleClient'
+            executable.write_text('#!/usr/bin/env python3\nimport pathlib\npathlib.Path("cwd-proof.txt").write_text(str(pathlib.Path.cwd()))\n')
+            executable.chmod(0o700)
+            runtime = Runtime(Store(root))
+            previous = os.open('.', os.O_RDONLY)
+            deleted = root/'obsolete-release'; deleted.mkdir()
+            try:
+                os.chdir(deleted); deleted.rmdir()
+                process = await runtime.spawn({'id':'cwd-test','country':'JP','provider':'psiphon','provider_port':61327})
+                self.assertEqual(await process.wait(), 0)
+                provider = root/'providers/cwd-test'
+                self.assertEqual((provider/'cwd-proof.txt').read_text(), str(provider))
+            finally:
+                os.fchdir(previous); os.close(previous)
+
     async def test_real_bidirectional_transfer_through_socks(self):
         payload = bytes(range(256)) * 4096
         async def echo(reader, writer):

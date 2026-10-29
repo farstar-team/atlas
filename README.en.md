@@ -6,7 +6,7 @@ Independent country exits beside native Sanaei **3x-ui**, with a simple Persian 
 
 ![Atlas dashboard — explicitly labelled fixture data](docs/images/desktop.png)
 
-Atlas creates a separate TCP entry for an existing inbound, then registers its own SOCKS outbound and source-specific web routing rule through the native panel API. Existing credentials, quotas and memberships remain in the native inbound. Add a **Host manually** in the panel to expose that entry in subscriptions.
+Atlas creates a separate TCP entry for an existing inbound, then registers its own SOCKS outbound and source-specific web routing rule through the native panel API. Existing credentials, quotas and memberships remain in the native inbound. Create a **Host inside Atlas** to expose that entry in existing subscriptions.
 
 Supports your own SOCKS5 exits and an optional official Psiphon engine for personal/authorized use. The public Psiphon service [does not permit redistribution or resale without an agreement](https://psiphon.ca/terms); use owned or appropriately licensed exits for customers.
 
@@ -30,7 +30,13 @@ Login uses the **existing 3x-ui account**, like ZARIB. Existing native sessions 
 
 Configured public IP aliases are accepted too. The native certificate must cover the address used by the browser; use the panel domain for valid HTTPS when its certificate is domain-only. Atlas preserves the native HTTP/HTTPS scheme and automatically refreshes restricted TLS copies. The firewall is preserved. Legacy private/password mode is an explicit installer `--private` option.
 
-Connect the panel with its complete base URL and Admin API token for background route management. Add a country, owned SOCKS endpoint and existing TCP inbound. Atlas creates the entry/outbound/rule. Use the card's Host details to add a native Host using that entry port, then refresh Happ's subscription. Ports must be reachable through your firewall and any existing Iran-to-foreign tunnel.
+Connect the panel with its complete base URL and Admin API token for background route management. Add a country, owned SOCKS endpoint and existing TCP inbound. Atlas creates the entry/outbound/rule. Use the card's Host management button to create the native Host in Atlas, then refresh Happ's subscription. Ports must be reachable through your firewall and any existing Iran-to-foreign tunnel.
+
+## Host administration — 0.4.0
+
+Create, edit, duplicate, disable and delete native Hosts from Atlas. Basic address/port/security/SNI/Host-header/path fields are editable; full current metadata is merged so unexposed advanced settings survive. Native client credentials, quota, membership and Xray templates are not rewritten. A Host is a subscription entry, not a new VPN account, tunnel or reachable network port. Adding the first Host can replace the native automatic entry; the UI asks explicitly. Existing per-client Host restrictions still apply.
+
+Writes use revision checks, operation IDs, private backups and read-back verification. A timed-out write is never blindly repeated; a separate read-only reconciliation handles incomplete Host operations. Existing Hosts are unchanged on install/update. The engine status distinguishes Atlas's optional private engine from already installed external country services.
 
 ## Adopt existing exits — 0.3.0
 
@@ -52,7 +58,7 @@ Uninstall:
 bash /opt/farstar-atlas/current/uninstall.sh
 ```
 
-Managed panel resources are detached first. User state/backups remain under `/var/lib/farstar-atlas`; delete manually-created Hosts in the panel. If detach fails, uninstall stops and restarts Atlas for recovery.
+Managed panel resources are detached first. User state/backups remain under `/var/lib/farstar-atlas`; delete retained Hosts through Atlas or the native panel before uninstall if no longer wanted. If detach fails, uninstall stops and restarts Atlas for recovery.
 
 Atlas never writes panel source files or changes panel SQL records during installation. The installer reads only web settings from SQLite/local PostgreSQL, or reuses existing ZARIB web metadata; the running daemon never accesses SQL. Persistent route changes use the official Xray template API. Future breaking API changes may still need an Atlas update. Never edit the same template concurrently through the panel and Atlas; the native API has no atomic compare-and-swap endpoint.
 

@@ -47,6 +47,16 @@ The official `xray/update` endpoint saves the template and asks the panel to rec
 
 ## Transactions and recovery
 
+### Native Host management (0.4.0)
+
+The authenticated Host page calls native `hosts/list`, `hosts/add`, `hosts/update/<groupId>` and `hosts/del/<groupId>` through the Admin token. It manages explicitly selected native Hosts, including pre-existing ones. Updates merge the small editable-field allowlist into the latest full group so transport/mux/socket/security metadata outside the form remains intact. Label-only changes retain native row IDs in the tested API. An explicit SNI change replaces its old random pool. Client-specific Host bindings and the panel's subscription naming template remain authoritative.
+
+Host changes do not call native inbound/client/template mutations or restart the core. A new Host uses a pre-generated unique group ID. Operation IDs, private `host-backups`, `hosts-pending.json` and read-back verification prevent blind duplicate creation after HTTP timeouts. Recovery only reconciles current state with the intended/prior fields; it does not overwrite conflicting external edits. Native APIs have no revision precondition, so concurrent external writers and late in-flight commits remain a risk. Generic Atlas route recovery does not restore Host backups. Removing a native Host can affect per-client bindings/tombstones; deletion requires an explicit confirmation.
+
+Creating the first Host can replace the native automatic subscription entry; the UI warns before saving. Host address/port reachability and existing Iran-forwarding configuration remain the operator's responsibility. Installing/updating Atlas creates no Host automatically. Adopted provider engine detection is separate from the optional Atlas-owned ConsoleClient; an absent internal engine does not disable external providers.
+
+### Atlas-owned route transactions
+
 1. Serialize Atlas writes.
 2. Read the current template and privately back up current route definitions/config/template.
 3. Write `pending.json` before side effects.

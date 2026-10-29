@@ -188,6 +188,7 @@ class Controller:
                     if country not in COUNTRIES:
                         continue
                     route.update(provider='existing-psiphon', country=country,
+                        engine_available=(root / 'ConsoleClient').is_file() and os.access(root / 'ConsoleClient', os.X_OK),
                         name=COUNTRIES[country] + ' ' + flag(country),
                         primary_proxy='socks5h://127.0.0.1:' + str(provider_port),
                         fallback_enabled=not bool(re.search(r'(?m)^\s*server germany_fallback .*\bdisabled\s*$', block)),

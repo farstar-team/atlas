@@ -184,6 +184,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self.send(200, result)
                 if path == '/api/inbounds':
                     return self.send(200, self.server.manager.panel().inbounds())
+                if path == '/api/hosts':
+                    return self.send(200, self.server.manager.hosts.listing())
                 if path == '/api/existing':
                     from .existing import public_route
                     return self.send(200, {'routes': [public_route(r) for r in self.server.manager.discover_existing()]})
@@ -267,6 +269,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send(200, {'inbounds': manager.connect(data)})
             if path == '/api/routes/add':
                 return self.send(200, {'id': manager.add(data)})
+            if path in ('/api/hosts/create', '/api/hosts/update', '/api/hosts/delete'):
+                return self.send(200, manager.hosts.change(path.rsplit('/', 1)[1], data))
+            if path == '/api/hosts/recover':
+                return self.send(200, manager.hosts.recover())
             if path == '/api/existing/import':
                 return self.send(200, {'ids': manager.import_existing(data.get('ids'))})
             if path in ('/api/existing/configure', '/api/existing/reconnect', '/api/existing/restore'):

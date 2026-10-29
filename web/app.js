@@ -2,6 +2,7 @@
 const $ = s => document.querySelector(s);
 const appBase = new URL('.', document.currentScript.src).pathname;
 let csrf = '', state = null, inbounds = [], refreshing = false, toastTimer, loginMode = 'password', discoveredExisting = [], editingExisting = null;
+let hostsData = null, editingHost = null, hostRoute = null;
 function configureLogin(mode) {
   loginMode = mode;
   const native = mode === 'panel';
@@ -34,7 +35,8 @@ async function busy(button, task) {
 function view(name) {
   document.querySelectorAll('.view').forEach(el => el.hidden = el.id !== name);
   document.querySelectorAll('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === name));
-  $('#view-title').textContent = {overview:'نمای کلی',settings:'اتصال و بازیابی',guide:'راهنمای شروع'}[name];
+  $('#view-title').textContent = {overview:'نمای کلی',hosts:'میزبان‌ها و کانفیگ‌ها',settings:'اتصال و بازیابی',guide:'راهنمای شروع'}[name];
+  if(name==='hosts') refreshHosts().catch(e=>toast(e.message,true));
   window.scrollTo({top:0, behavior:'smooth'});
 }
 function showLogin() { $('#shell').hidden = true; $('#login').hidden = false; state = null; }
@@ -81,7 +83,7 @@ function render() {
   }).join('');
   $('#events').innerHTML = state.events.length ? state.events.slice(0,6).map(event => `<div class="event"><i></i><span>${esc(event.message)}</span><time>${new Date(event.at*1000).toLocaleTimeString('fa-IR', {hour:'2-digit',minute:'2-digit'})}</time></div>`).join('') : '<p>رویداد تازه‌ای ثبت نشده است.</p>';
   if (document.activeElement !== $('#panel-url') && !$('#panel-url').value) $('#panel-url').value = state.panel_url;
-  $('#engine-state').textContent = state.engine_installed ? '● موتور بررسی‌شده نصب است.' : '○ هنوز نصب نشده است.';
+  $('#engine-state').textContent = state.engine_installed ? '● موتور مستقل Atlas نصب است.' : state.external_engine_routes ? `● موتور قبلی سرور برای ${fa(state.external_engine_routes)} مسیر شناسایی شد. موتور مستقل Atlas نصب نیست و برای مسیرهای فعلی لازم نیست.` : '○ موتور مستقل Atlas هنوز نصب نشده است؛ فقط برای ساخت مسیر جدید Psiphon لازم می‌شود.';
   $('#engine-install').textContent = state.engine_installed ? 'بررسی و نصب دوباره' : 'نصب موتور بررسی‌شده';
   const selected = $('#backup-list').value;
   $('#backup-list').innerHTML = state.backups.length ? state.backups.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('') : '<option value="">هنوز پشتیبان نداریم</option>';
@@ -103,6 +105,7 @@ async function openAdd() {
 function providerChanged() { const ps = $('input[name=provider]:checked').value === 'psiphon'; $('#psiphon-fields').hidden = !ps; $('#socks-fields').hidden = ps; $('#proxy').required = !ps; }
 function hostInfo(id) {
   const route = state.routes.find(r => r.id === id); if (!route) return;
+  hostRoute = route;
   $('#new-host-instructions').hidden = route.kind === 'existing';
   $('#existing-host-instructions').hidden = route.kind !== 'existing';
   if (route.kind === 'existing') {
@@ -115,6 +118,63 @@ function hostInfo(id) {
   $('#host-details').innerHTML = values.map(([key,value]) => `<div class="host-row"><span>${esc(key)}</span><code>${esc(value)}</code><button class="icon-button copy" data-copy="${esc(value)}" title="کپی" aria-label="کپی">⧉</button></div>`).join('');
   $('#host-dialog').showModal();
 }
+async function refreshHosts() {
+  $('#hosts-demo').hidden=!state?.demo;
+  hostsData=await api('hosts'); $('#host-count').textContent=fa(hostsData.groups.length);
+  $('#host-pending').hidden=!hostsData.pending; $('#host-add').disabled=hostsData.pending;
+  $('#hosts-list').innerHTML=hostsData.groups.map(h=>{
+    const labels=(h.inboundIds||[]).map(id=>hostsData.inbounds.find(x=>x.id===id)?.remark || String(id));
+    return `<article class="panel-box host-card"><div class="card-top"><span class="eyebrow">SUBSCRIPTION HOST</span><span class="status-pill ${h.isDisabled?'bad':'good'}">${h.isDisabled?'غیرفعال':'فعال در اشتراک'}</span></div><h3>${esc(h.remark)}</h3><p>${labels.map(esc).join(' · ')}</p><div class="host-address-list" dir="ltr">${(h.hosts||[]).map(x=>`<code>${esc(x)}</code>`).join('')}</div><div class="card-footer"><small>${esc(h.security||'same')} · ${esc(h.port||'پورت اینباند')}</small><div class="card-actions"><button class="text-button" data-host-action="edit" data-host-id="${esc(h.groupId)}" ${hostsData.pending?'disabled':''}>ویرایش</button><button class="text-button" data-host-action="clone" data-host-id="${esc(h.groupId)}" ${hostsData.pending?'disabled':''}>کپی و افزودن</button><button class="text-button danger-text" data-host-action="delete" data-host-id="${esc(h.groupId)}" ${hostsData.pending?'disabled':''}>حذف</button></div></div></article>`;
+  }).join('') || '<p>هنوز Hostی ثبت نشده است. افزودن کانفیگ را بزن.</p>';
+}
+function fillHost(h) {
+  $('#host-name').value=h.remark||''; $('#host-addresses').value=(h.hosts||[]).join('\n');
+  $('#host-port').value=h.port||0; $('#host-security').value=h.security||'same';
+  for(const option of $('#host-inbounds').options) option.selected=(h.inboundIds||[]).includes(Number(option.value));
+  $('#host-sni').value=h.sni||''; $('#host-header').value=h.hostHeader||''; $('#host-path').value=h.path||'';
+  $('#host-enabled').checked=!h.isDisabled; firstHostWarning();
+}
+function firstHostWarning() {
+  const ids=[...$('#host-inbounds').selectedOptions].map(x=>Number(x.value));
+  $('#host-first-warning').hidden=!!editingHost || !ids.some(id=>!hostsData.groups.some(h=>h.inboundIds.includes(id)));
+}
+async function openHost(id=null,clone=false,route=null) {
+  if(!hostsData) await refreshHosts(); if(hostsData.pending) return toast('ابتدا عملیات نیمه‌تمام Host را بررسی کن.',true);
+  const selected=hostsData.groups.find(h=>h.groupId===id);editingHost=clone?null:selected||null;
+  $('#host-edit-form').reset(); $('#host-edit-title').textContent=editingHost?'ویرایش کانفیگ':'افزودن کانفیگ';
+  $('#host-template').innerHTML='<option value="">تنظیمات اینباند / ارث‌بری</option>'+hostsData.groups.map(h=>`<option value="${esc(h.groupId)}">${esc(h.remark)} · ${esc((h.hosts||[])[0]||'')}</option>`).join('');
+  $('#host-template').disabled=!!editingHost; $('#host-template').value=clone?id:'';
+  $('#host-inbounds').innerHTML=hostsData.inbounds.map(i=>`<option value="${i.id}">${esc(i.remark||i.tag)} · ${i.port}</option>`).join('');
+  fillHost(selected||{security:'same',inboundIds:route?[route.inbound_id]:[],port:route?.entry_port||0,remark:route?.name||''});
+  if(clone) $('#host-name').value='Copy '+selected.remark;
+  $('#host-edit-dialog').showModal();
+}
+$('#host-add').onclick=()=>busy($('#host-add'),()=>openHost());
+$('#hosts-refresh').onclick=()=>busy($('#hosts-refresh'),refreshHosts);
+$('#host-manage').onclick=async()=>{ $('#host-dialog').close();view('hosts');await refreshHosts();if(hostRoute?.kind!=='existing')await openHost(null,false,hostRoute); };
+$('#host-inbounds').onchange=firstHostWarning;
+$('#host-template').onchange=()=>{const h=hostsData.groups.find(x=>x.groupId===$('#host-template').value);if(h)fillHost(h);};
+$('#host-edit-form').onsubmit=async event=>{
+  event.preventDefault();
+  if(!$('#host-first-warning').hidden && !await confirmAction('اولین Host این اینباند ثبت شود؟','این گزینه جای ورودی خودکار فعلی را در اشتراک می‌گیرد. آدرس قبلی را هم به‌عنوان Host نگه دار تا کاربران آن را از دست ندهند.')) return;
+  const values={remark:$('#host-name').value.trim(),hosts:$('#host-addresses').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),port:Number($('#host-port').value),security:$('#host-security').value,inboundIds:[...$('#host-inbounds').selectedOptions].map(x=>Number(x.value)),sni:$('#host-sni').value.trim(),hostHeader:$('#host-header').value.trim(),path:$('#host-path').value,isDisabled:!$('#host-enabled').checked};
+  const template=hostsData.groups.find(x=>x.groupId===$('#host-template').value);
+  const payload={operation:operationId(),values,...(editingHost?{id:editingHost.groupId,revision:editingHost.revision}:template?{template_id:template.groupId,template_revision:template.revision}:{})};
+  await busy($('#host-edit-form button[type=submit]'),async()=>{
+    try {await api('hosts/'+(editingHost?'update':'create'),payload);$('#host-edit-dialog').close();toast('کانفیگ در پنل ثبت شد؛ اشتراک Happ را به‌روز کنید.');}
+    finally {await refreshHosts();await refresh();}
+  });
+};
+$('#hosts-list').onclick=async event=>{
+  const button=event.target.closest('[data-host-action]');if(!button)return;
+  const host=hostsData.groups.find(x=>x.groupId===button.dataset.hostId);if(!host)return;
+  if(button.dataset.hostAction==='delete') {
+    if(!await confirmAction('این Host از اشتراک حذف شود؟','کاربران عضو اینباند هم این گزینه را پس از به‌روزرسانی از دست می‌دهند. کاربر و حجم حذف نمی‌شود؛ قانون اختصاصی وابسته به این Host هم ممکن است تحت تأثیر قرار بگیرد.'))return;
+    await busy(button,async()=>{try{await api('hosts/delete',{id:host.groupId,revision:host.revision,operation:operationId()});toast('Host حذف شد؛ اشتراک را تازه کنید.');}finally{await refreshHosts();await refresh();}});
+  } else await busy(button,()=>openHost(host.groupId,button.dataset.hostAction==='clone'));
+};
+$('#host-recover').onclick=()=>busy($('#host-recover'),async()=>{const result=await api('hosts/recover',{});await refreshHosts();await refresh();toast(result.applied?'ثبت Host تأیید شد.':'تغییری ثبت نشده؛ می‌توانی دوباره اقدام کنی.');});
+
 document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => view(button.dataset.view));
 document.querySelectorAll('.close-dialog').forEach(button => button.onclick = () => button.closest('dialog').close());
 document.querySelectorAll('input[name=provider]').forEach(el => el.onchange = providerChanged);

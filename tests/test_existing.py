@@ -66,6 +66,10 @@ class ExistingControllerTests(unittest.TestCase):
     def test_public_metadata_redacts_socks_credentials(self):
         warp=next(r for r in self.controller.inventory() if r['outbound_tag']=='warp')
         self.assertIn('SECRET',warp['proxy']);self.assertNotIn('SECRET',json.dumps(public_route(warp)))
+    def test_external_engine_detection_is_separate_from_atlas_engine(self):
+        self.assertFalse(self.fr()['engine_available'])
+        binary=self.country/'ConsoleClient';binary.write_text('fixture');binary.chmod(0o755)
+        self.assertTrue(self.fr()['engine_available'])
     def test_country_update_changes_only_region_and_matching_backend(self):
         native_before=self.native_path.read_bytes();result=self.controller.dispatch(self.request(country='US',fallback_enabled=True))
         self.assertEqual(result['country'],'US')

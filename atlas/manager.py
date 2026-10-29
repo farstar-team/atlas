@@ -20,6 +20,8 @@ class Manager:
         self.lock = threading.RLock()
         self.pending = store.root / 'pending.json'
         self.existing = existing_client or ExistingClient()
+        from .hosts import Hosts
+        self.hosts = Hosts(self)
 
     def panel(self):
         config = self.store.read().get('panel')
@@ -283,6 +285,8 @@ class Manager:
 
     def change_existing(self, rid, action, data=None):
         with self.lock:
+            if self.hosts.pending.exists():
+                raise ValueError('ابتدا عملیات نیمه‌تمام میزبان‌ها را بررسی کنید.')
             data = data or {}
             config = self.store.read()
             prior = next((r for r in config['routes'] if r['id'] == rid and r.get('kind') == 'existing'), None)
@@ -333,5 +337,6 @@ class Manager:
             'routes': routes, 'status': self.runtime.public_status(), 'events': self.store.events(),
             'backups': self.store.backups(), 'pending': self.pending.exists(),
             'engine_installed': (self.store.root / 'engine' / 'ConsoleClient').is_file(),
+            'external_engine_routes': sum(r.get('provider') == 'existing-psiphon' and r.get('engine_available', False) for r in fresh.values()),
             'existing_available': not existing_error and (Path(self.existing.path).exists() if hasattr(self.existing, 'path') else True),
             'countries': COUNTRIES}

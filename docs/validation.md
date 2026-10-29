@@ -1,3 +1,15 @@
+# Host administration validation — 0.4.0, 2026-10-29
+
+93 automated tests pass. New coverage includes native Host creation/edit/clone/delete, preserved advanced metadata/SNI pools, disabled-inbound associations, stale revisions, strict editable fields, idempotent operation IDs, committed-write timeout reconciliation, incomplete-operation recovery and external-engine detection.
+
+Chrome exercised authenticated Host listing and CRUD, clone preservation, deletion cancellation, the external-vs-internal engine message, desktop/mobile rendering and overflow checks. Screenshots use labelled synthetic data and reserved IPs. The prior route/adoption browser suites still pass.
+
+Against an expendable official 3x-ui 3.11.0 instance, a Host created through Atlas appeared as a new address in the actual delivered VLESS subscription. Editing its label retained the native Host row ID. A disabled clone was excluded, both test groups were removed, and the original Host list, native template, client identity/quota/membership and running core PID were preserved. These endpoint-delivery checks do not claim that an arbitrary new public address/port has network reachability.
+
+Native subscription naming remains controlled by the panel template; adding a Host does not automatically rewrite naming, tunnel configuration or per-client Host restrictions. The native `isHidden` flag is not treated as subscription exclusion; this release exposes the actual native enable/disable control instead.
+
+---
+
 # Existing exit management validation — 0.3.0, 2026-10-29
 
 77 automated tests cover the previous behavior plus passive adoption, exclusion from native template ownership, preserved Host/security metadata, root-controller command restrictions, stale revisions, operation idempotency, backup scoping, failure rollback, crash-recovery metadata and truthful active-backup reporting. The native configuration is asserted unchanged during controller tests.

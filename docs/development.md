@@ -20,6 +20,8 @@ Install Playwright in a development environment and provide an existing Chrome e
 ```bash
 python3 -m pip install playwright
 python3 -m tests.browser_smoke --chrome /path/to/chrome
+python3 -m tests.browser_existing --chrome /path/to/chrome
+python3 -m tests.browser_hosts --chrome /path/to/chrome
 ```
 
 The UI preview is explicitly marked as fixture data. The test exercises login, route listing, settings, route creation, Host instructions, deletion confirmation and mobile overflow. It writes screenshots under `docs/images` and checks for JavaScript errors.

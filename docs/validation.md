@@ -15,7 +15,7 @@ Release: **0.1.0**. Tests ran locally and inside an expendable Linux VM; no prod
 - Login/session authentication, Host/origin checks, CSRF enforcement, logout invalidation, CSP and static-path isolation.
 - Explicit installer manifest, tamper/incomplete/traversal rejection, idempotent staging and exclusion of unlisted private files.
 
-CI is configured for Python 3.10, 3.12 and 3.14, plus JavaScript syntax, shell syntax, checksum and package-staging checks. The matrix is a configured check; its actual run result must be read from GitHub Actions rather than inferred from this document.
+CI covers Python 3.10, 3.12 and 3.14, plus JavaScript syntax, shell syntax, checksum and package-staging checks. The published code revision `abe9b2d5cc394c33ae75be06f8c7cdadffc764c0` passed the matrix in [GitHub Actions run 40857585959](https://github.com/farstar-team/atlas/actions/runs/40857585959). Later revisions have their own check results.
 
 ## Browser
 
@@ -55,4 +55,4 @@ These checks prove the observed connection at test time. They do not establish a
 
 The one-command installer was executed in the isolated VM, initialized private state and started an unprivileged systemd service. Re-running installation preserved the exact private configuration bytes and engine cache, activated the staged release and kept the native core PID. The actual uninstall script successfully detached managed resources, removed its service/launcher, and retained private state/backups while the native core PID remained unchanged. Code activation and manifest staging were checked independently. Atlas's own restart can reconnect Atlas streams; it does not explicitly restart the native panel/core.
 
-The public bootstrap and the repository's CI are verified after publication; a successful private staging test alone is not presented as evidence of a successful GitHub download.
+After publication, the exact README installation command was also executed in the isolated VM: the bootstrap resolved GitHub `main`, fetched the public commit archive, verified all packaged SHA-256 entries, preserved existing private configuration and started a healthy service. This was a public-download test in addition to private staging.

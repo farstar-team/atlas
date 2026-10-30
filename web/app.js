@@ -50,6 +50,7 @@ async function confirmAction(title, text) {
   });
 }
 function render() {
+  renderLicense(state.license);
   $('#preview-banner').hidden = !state.demo;
   $('#setup-banner').hidden = state.connected;
   $('#pending-banner').hidden = !state.pending;
@@ -241,3 +242,22 @@ $('#restore').onclick = async () => {if(!await confirmAction('مسیرهای ا�
 $('#recover').onclick = async () => busy($('#recover'),async () => {await api('recover',{}); await refresh(); toast('تغییرهای عملیات نیمه‌تمام برگشت داده شد.');});
 (async () => {try {const session=await api('session'); csrf=session.csrf; if(session.authenticated) await enter(); else showLogin();} catch(e) {showLogin(); $('#login-error').textContent=e.message;}})();
 setInterval(refresh,6000);
+
+const LICENSE_PRODUCT="Atlas";
+const licenseRequest=(action,body)=>api("license/"+action,body);
+const licenseNotice=toast;
+
+function renderLicense(value) {
+  const info=value||{status:'missing',can_manage:false};
+  const names={active:'فعال',missing:'فعال نشده',invalid:'نامعتبر',revoked:'متوقف شده',expired:'نیازمند تمدید'};
+  document.querySelector('#license-product').textContent=LICENSE_PRODUCT;
+  document.querySelector('#license-box').dataset.state=info.status;
+  document.querySelector('#license-status').textContent=(names[info.status]||info.status)+(info.expires_at?' · پایان: '+new Date(info.expires_at*1000).toLocaleString('fa-IR'):'')+(info.offline_grace?' · استفاده از مهلت آفلاین':'')+(info.last_error?' · '+info.last_error:'');
+}
+document.querySelector('#license-form').onsubmit=async event=>{
+  event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;
+  try{const value=await licenseRequest('activate',{key:document.querySelector('#license-key').value,new_installation:document.querySelector('#license-new').checked});document.querySelector('#license-key').value='';document.querySelector('#license-new').checked=false;renderLicense(value);licenseNotice('لایسنس فعال شد.');}catch(error){licenseNotice(error.message,true);}finally{button.disabled=false;}
+};
+document.querySelector('#license-refresh').onclick=async event=>{
+  event.target.disabled=true;try{renderLicense(await licenseRequest('refresh',{}));licenseNotice('وضعیت اعتبار بررسی شد.');}catch(error){licenseNotice(error.message,true);}finally{event.target.disabled=false;}
+};

@@ -171,7 +171,7 @@ def checked_files(source):
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise RuntimeError('Checksum mismatch: ' + name)
         records.append(name)
-    required = {'atlas/__main__.py', 'atlas/server.py', 'atlas/existing.py', 'atlas/hosts.py', 'web/index.html', 'providers/psiphon.json', 'VERSION'}
+    required = {'atlas/__main__.py', 'atlas/server.py', 'atlas/license_client.py', 'atlas/existing.py', 'atlas/hosts.py', 'web/index.html', 'providers/psiphon.json', 'VERSION'}
     if not required.issubset(records):
         raise RuntimeError('Incomplete manifest')
     return records

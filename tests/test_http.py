@@ -37,6 +37,18 @@ class HTTPTests(unittest.TestCase):
         return data['csrf'],headers['Set-Cookie'].split(';')[0]
     def test_unauthenticated_cannot_read_state(self):
         self.assertEqual(self.request('/api/state')[0],401)
+    def test_unlicensed_management_is_blocked_without_mutating_routes(self):
+        csrf,cookie=self.login()
+        headers={'Cookie':cookie,'X-Atlas-CSRF':csrf}
+        before=self.manager.store.read()
+        status,value,_=self.request('/api/routes/add',{},headers)
+        self.assertEqual(status,400)
+        self.assertIn('لایسنس',value['error'])
+        self.assertEqual(self.manager.store.read(),before)
+        status,value,_=self.request('/api/license',headers=headers)
+        self.assertEqual(status,200)
+        self.assertFalse(value['can_manage'])
+        self.assertNotIn('installation_token',value)
     def test_health_does_not_include_credentials(self):
         status,data,_=self.request('/healthz')
         self.assertEqual(status,200);self.assertEqual(set(data),{'ok','version'})

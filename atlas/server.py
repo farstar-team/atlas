@@ -11,6 +11,7 @@ import time
 import urllib.parse
 import ssl
 
+from .license_client import LicenseClient
 from . import __version__
 from .storage import password_matches
 from .access import PanelAccess, LoginRequired, PanelUnavailable, native_cookie
@@ -21,6 +22,10 @@ class Server(http.server.ThreadingHTTPServer):
     request_queue_size = 32
     def __init__(self, address, manager, static=None, tls=False, access=None):
         self.manager = manager
+        cfg = access or {}
+        instance = str(cfg.get('panel_port', 2053)) + ':' + cfg.get('panel_base_path', '/')
+        self.license = LicenseClient(manager.store.root / 'license.json', 'atlas', instance)
+        self.license.start()
         self.static = Path(static or Path(__file__).parent.parent / 'web')
         self.tls = tls
         self.access = access or {}
@@ -178,10 +183,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     raise LoginRequired('ابتدا وارد Atlas شوید.')
                 if path == '/api/state':
                     result = self.server.manager.state()
+                    result['license'] = self.server.license.status()
                     if self.server.native and not result.get('panel_url'):
                         host = self.server.native.config['panel_hostname'] if self.server.tls else '127.0.0.1'
                         result['panel_url'] = self.server.native.login_url(host)
                     return self.send(200, result)
+                if path == '/api/license':
+                    return self.send(200, self.server.license.status())
                 if path == '/api/inbounds':
                     return self.send(200, self.server.manager.panel().inbounds())
                 if path == '/api/hosts':
@@ -265,6 +273,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     for key in [k for k, v in self.server.sessions.items() if v is session]:
                         del self.server.sessions[key]
                 return self.send(200, {'ok': True}, cookie='atlas_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
+            if path == '/api/license/activate':
+                return self.send(200, self.server.license.activate(data.get('key'), data.get('new_installation') is True))
+            if path == '/api/license/refresh':
+                return self.send(200, self.server.license.refresh())
+            if path not in ('/api/check', '/api/recover', '/api/restore', '/api/hosts/recover', '/api/routes/remove'):
+                self.server.license.require_management()
             if path == '/api/connect':
                 return self.send(200, {'inbounds': manager.connect(data)})
             if path == '/api/routes/add':

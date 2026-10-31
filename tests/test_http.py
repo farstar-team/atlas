@@ -52,6 +52,21 @@ class HTTPTests(unittest.TestCase):
     def test_health_does_not_include_credentials(self):
         status,data,_=self.request('/healthz')
         self.assertEqual(status,200);self.assertEqual(set(data),{'ok','version'})
+    def test_error_response_has_cause_hint_and_safe_tracking_id(self):
+        status,value,_=self.request('/api/state')
+        self.assertEqual(status,401)
+        self.assertEqual(value['error_code'],'login_required')
+        self.assertTrue(value['error_title'] and value['error_hint'])
+        self.assertEqual(len(value['error_id']),12)
+    def test_shared_feedback_asset_is_served(self):
+        status,value,headers=self.request('/ui-feedback.js')
+        self.assertEqual(status,200)
+        self.assertIn('javascript',headers['Content-Type'])
+    def test_license_is_a_separate_hidden_view_at_start(self):
+        status,value,_=self.request('/')
+        self.assertEqual(status,200)
+        self.assertIn(b'data-view="license"',value)
+        self.assertIn(b'id="license" class="view" hidden',value)
     def test_host_rebinding_is_rejected(self):
         self.assertEqual(self.request('/api/session',headers={'Host':'attacker.example'})[0],403)
     def test_cross_origin_login_is_rejected(self):

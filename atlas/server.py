@@ -3,6 +3,7 @@ import collections
 import http.cookies
 import http.server
 import json
+import logging
 from pathlib import Path
 import secrets
 import socket
@@ -12,6 +13,7 @@ import urllib.parse
 import ssl
 
 from .license_client import LicenseClient
+from .ui_errors import response_error
 from . import __version__
 from .storage import password_matches
 from .access import PanelAccess, LoginRequired, PanelUnavailable, native_cookie
@@ -85,6 +87,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # URLs, credentials and native subscription IDs do not belong in logs.
 
     def send(self, status, body, content_type='application/json; charset=utf-8', cookie=None):
+        if status>=400 and isinstance(body,dict) and 'error' in body and not body.get('error_code'):
+            body={**body,**response_error(body['error'],status,self.relative_path() or '')}
         if isinstance(body, (dict, list)):
             body = json.dumps(body, ensure_ascii=False).encode()
         elif isinstance(body, str):
@@ -203,6 +207,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         paths = {'/': ('index.html', 'text/html; charset=utf-8'),
             '/app.css': ('app.css', 'text/css; charset=utf-8'),
             '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+            '/ui-feedback.js': ('ui-feedback.js', 'text/javascript; charset=utf-8'),
             '/atlas.svg': ('atlas.svg', 'image/svg+xml')}
         if path not in paths:
             return self.send(404, 'Not found', 'text/plain')
@@ -217,7 +222,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send(503, {'error': str(exc)[:400]})
         if isinstance(exc, (ValueError, PanelError)):
             return self.send(400, {'error': str(exc)[:400]})
-        return self.send(500, {'error': 'عملیات کامل نشد؛ وضعیت مسیر و بازیابی عملیات را بررسی کنید.'})
+        body=response_error('عملیات کامل نشد؛ وضعیت مسیر و بازیابی عملیات را بررسی کنید.',500,self.relative_path() or '')
+        logging.error('Atlas internal error kind=%s id=%s',type(exc).__name__,body['error_id'])
+        return self.send(500,body)
 
     def do_POST(self):
         if not self.valid_host():

@@ -20,27 +20,34 @@ function flagIcon(code) {
   const colors=bands[code], vertical=['FR','IT'].includes(code), unit=(vertical?36:25)/colors.length;
   return `<svg viewBox="0 0 36 25" width="36" height="25" aria-label="${code}" role="img">${colors.map((color,i)=>`<rect x="${vertical?i*unit:0}" y="${vertical?0:i*unit}" width="${vertical?unit:36}" height="${vertical?25:unit}" fill="${color}"/>`).join('')}</svg>`;
 }
-function toast(message, error=false) { const el = $('#toast'); el.textContent = message; el.classList.toggle('error-toast', error); el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, error ? 12000 : 6000); }
+function toast(message, error=false) { if(error)return FarstarFeedback.show(message); const el = $('#toast'); el.textContent = message; el.classList.toggle('error-toast', error); el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.hidden = true, error ? 12000 : 6000); }
 async function api(path, body) {
-  const response = await fetch(appBase + 'api/' + path, {credentials:'same-origin', cache:'no-store', headers:body ? {'Content-Type':'application/json','X-Atlas-CSRF':csrf} : {}, method:body ? 'POST' : 'GET', body:body ? JSON.stringify(body) : undefined});
-  const result = await response.json();
-  if (result.mode) configureLogin(result.mode);
-  if (!response.ok) { if (response.status === 401 && path !== 'login') showLogin(); throw Error(result.error || 'درخواست کامل نشد.'); }
-  return result;
+  try {
+    const result=await FarstarFeedback.request(appBase+'api/'+path,{headers:body?{'Content-Type':'application/json','X-Atlas-CSRF':csrf}:{},method:body?'POST':'GET',body:body?JSON.stringify(body):undefined},{operation:path,timeoutMs:path==='engine'?120000:35000});
+    if(result.mode)configureLogin(result.mode);
+    return result;
+  } catch(error) {
+    if(error.mode)configureLogin(error.mode);
+    if(error.status===401 && path!=='login')showLogin();
+    throw error;
+  }
 }
 async function busy(button, task) {
+  FarstarFeedback.clear({target:button});
   const original = button.textContent; button.disabled = true; button.textContent = 'کمی صبر کن…';
-  try { return await task(); } catch (e) { toast(e.message, true); } finally { button.disabled = false; button.textContent = original; }
+  try { return await task(); } catch (e) { FarstarFeedback.show(e,{target:button}); } finally { button.disabled = false; button.textContent = original; }
 }
 function view(name) {
+  if(!['overview','hosts','settings','guide','license'].includes(name))name='overview';
+  history.replaceState(null,'','#'+name);
   document.querySelectorAll('.view').forEach(el => el.hidden = el.id !== name);
   document.querySelectorAll('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === name));
-  $('#view-title').textContent = {overview:'نمای کلی',hosts:'میزبان‌ها و کانفیگ‌ها',settings:'اتصال و بازیابی',guide:'راهنمای شروع'}[name];
-  if(name==='hosts') refreshHosts().catch(e=>toast(e.message,true));
+  $('#view-title').textContent = {overview:'نمای کلی',hosts:'میزبان‌ها و کانفیگ‌ها',settings:'اتصال و بازیابی',guide:'راهنمای شروع',license:'لایسنس'}[name];
+  if(name==='hosts') refreshHosts().catch(e=>FarstarFeedback.show(e));
   window.scrollTo({top:0, behavior:'smooth'});
 }
 function showLogin() { $('#shell').hidden = true; $('#login').hidden = false; state = null; }
-async function enter() { $('#login').hidden = true; $('#shell').hidden = false; await refresh(); }
+async function enter() { $('#login').hidden = true; $('#shell').hidden = false; await refresh(); view(location.hash.slice(1)||'overview'); }
 async function confirmAction(title, text) {
   $('#confirm-title').textContent = title; $('#confirm-text').textContent = text;
   const dialog = $('#confirm-dialog'); dialog.showModal();
@@ -91,7 +98,7 @@ function render() {
   if (state.backups.includes(selected)) $('#backup-list').value = selected;
   $('#restore').disabled = !state.backups.length || state.pending; $('#recover').disabled = !state.pending;
 }
-async function refresh() { if (refreshing || $('#shell').hidden) return; refreshing = true; try { state = await api('state'); render(); } catch(e) { toast(e.message,true); } finally { refreshing=false; } }
+async function refresh() { if (refreshing || $('#shell').hidden) return; refreshing = true; try { state = await api('state'); render(); FarstarFeedback.clear({background:true}); } catch(e) { FarstarFeedback.show(e,{background:true}); } finally { refreshing=false; } }
 async function openAdd() {
   if (!state?.connected) {view('settings'); return;}
   if (state.pending) return toast('ابتدا عملیات نیمه‌تمام را بازیابی کن.',true);
@@ -100,8 +107,8 @@ async function openAdd() {
     $('#country').innerHTML = Object.entries(state.countries).map(([code,name]) => `<option value="${code}">${esc(name)} ${flag(code)}</option>`).join('');
     $('#inbound').innerHTML = inbounds.filter(r => ['vless','vmess','trojan','shadowsocks'].includes(r.protocol)).map(row => `<option value="${row.id}">${esc(row.remark || row.tag)} · ${esc(row.port)}</option>`).join('');
     if (!$('#inbound').options.length) return toast('یک اینباند TCP فعال در پنل لازم است.',true);
-    $('#route-form').reset(); providerChanged(); $('#route-dialog').showModal();
-  } catch(e) {toast(e.message,true);}
+    FarstarFeedback.clear({region:$('#route-form'),all:true}); $('#route-form').reset(); providerChanged(); $('#route-dialog').showModal();
+  } catch(e) {FarstarFeedback.show(e);}
 }
 function providerChanged() { const ps = $('input[name=provider]:checked').value === 'psiphon'; $('#psiphon-fields').hidden = !ps; $('#socks-fields').hidden = ps; $('#proxy').required = !ps; }
 function hostInfo(id) {
@@ -148,7 +155,7 @@ async function openHost(id=null,clone=false,route=null) {
   $('#host-inbounds').innerHTML=hostsData.inbounds.map(i=>`<option value="${i.id}">${esc(i.remark||i.tag)} · ${i.port}</option>`).join('');
   fillHost(selected||{security:'same',inboundIds:route?[route.inbound_id]:[],port:route?.entry_port||0,remark:route?.name||''});
   if(clone) $('#host-name').value='Copy '+selected.remark;
-  $('#host-edit-dialog').showModal();
+  FarstarFeedback.clear({region:$('#host-edit-form'),all:true}); $('#host-edit-dialog').showModal();
 }
 $('#host-add').onclick=()=>busy($('#host-add'),()=>openHost());
 $('#hosts-refresh').onclick=()=>busy($('#hosts-refresh'),refreshHosts);
@@ -157,13 +164,16 @@ $('#host-inbounds').onchange=firstHostWarning;
 $('#host-template').onchange=()=>{const h=hostsData.groups.find(x=>x.groupId===$('#host-template').value);if(h)fillHost(h);};
 $('#host-edit-form').onsubmit=async event=>{
   event.preventDefault();
+  if($('#host-addresses').value.split(/\r?\n/).some(value=>value.includes('://')||/[?#@\\]/.test(value)))return FarstarFeedback.show(new FarstarFeedback.UIError('آدرس Host نباید لینک یا شامل رمز باشد؛ فقط دامنه یا IP و پورت اختیاری وارد کن.',{code:'host_address_invalid',title:'آدرس ورود Host معتبر نیست',hint:'مثال درست: example.com:443. پیشوند https:// و مسیر وب را حذف کن.'}),{target:event.target});
   if(!$('#host-first-warning').hidden && !await confirmAction('اولین Host این اینباند ثبت شود؟','این گزینه جای ورودی خودکار فعلی را در اشتراک می‌گیرد. آدرس قبلی را هم به‌عنوان Host نگه دار تا کاربران آن را از دست ندهند.')) return;
   const values={remark:$('#host-name').value.trim(),hosts:$('#host-addresses').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),port:Number($('#host-port').value),security:$('#host-security').value,inboundIds:[...$('#host-inbounds').selectedOptions].map(x=>Number(x.value)),sni:$('#host-sni').value.trim(),hostHeader:$('#host-header').value.trim(),path:$('#host-path').value,isDisabled:!$('#host-enabled').checked};
   const template=hostsData.groups.find(x=>x.groupId===$('#host-template').value);
   const payload={operation:operationId(),values,...(editingHost?{id:editingHost.groupId,revision:editingHost.revision}:template?{template_id:template.groupId,template_revision:template.revision}:{})};
   await busy($('#host-edit-form button[type=submit]'),async()=>{
+    let failure=null;
     try {await api('hosts/'+(editingHost?'update':'create'),payload);$('#host-edit-dialog').close();toast('کانفیگ در پنل ثبت شد؛ اشتراک Happ را به‌روز کنید.');}
-    finally {await refreshHosts();await refresh();}
+    catch(error){failure=error;throw error;}
+    finally {try{await refreshHosts();await refresh();}catch(error){if(!failure)throw error;FarstarFeedback.show(error,{background:true});}}
   });
 };
 $('#hosts-list').onclick=async event=>{
@@ -217,15 +227,15 @@ $('#existing-restore').onclick = async () => {
   if(!editingExisting?.last_backup || !await confirmAction('تنظیم قبلی همین خروجی برگردد؟','کشور و پشتیبان قبلی برمی‌گردند. اتصال‌های باز همین خروجی ممکن است دوباره ساخته شوند.')) return;
   await busy($('#existing-restore'),async () => {await api('existing/restore',{id:editingExisting.id,revision:editingExisting.revision,backup:editingExisting.last_backup,operation:operationId()});$('#existing-edit-dialog').close();await refresh();toast('تنظیم قبلی خروجی برگشت داده شد.');});
 };
-$('#login-form').onsubmit = async event => { event.preventDefault(); $('#login-error').textContent = ''; await busy($('#login-form button'), async () => { try { const result = await api('login',{username:$('#login-username').value,password:$('#login-password').value,twoFactorCode:$('#login-twofactor').value}); csrf = result.csrf; $('#login-password').value = ''; $('#login-twofactor').value = ''; await enter(); } catch(e) {$('#login-error').textContent=e.message; throw e;} }); };
-$('#logout').onclick = async () => { try {await api('logout',{}); showLogin();} catch(e) {toast(e.message,true);} };
-$('#panel-form').onsubmit = async event => {event.preventDefault(); await busy($('#panel-form button'),async () => {await api('connect',{url:$('#panel-url').value,token:$('#panel-token').value}); $('#panel-token').value=''; toast('پنل با موفقیت متصل شد. حالا کشور را اضافه کن.'); await refresh(); view('overview');});};
+$('#login-form').onsubmit = async event => { event.preventDefault(); $('#login-error').textContent = ''; await busy($('#login-form button[type=submit]'), async () => { try { const result = await api('login',{username:$('#login-username').value,password:$('#login-password').value,twoFactorCode:$('#login-twofactor').value}); csrf = result.csrf; $('#login-password').value = ''; $('#login-twofactor').value = ''; await enter(); } catch(e) {$('#login-error').textContent=e.message; throw e;} }); };
+$('#logout').onclick = async () => { try {await api('logout',{}); showLogin();} catch(e) {FarstarFeedback.show(e);} };
+$('#panel-form').onsubmit = async event => {event.preventDefault(); await busy($('#panel-form button[type=submit]'),async () => {await api('connect',{url:$('#panel-url').value,token:$('#panel-token').value}); $('#panel-token').value=''; toast('پنل با موفقیت متصل شد. حالا کشور را اضافه کن.'); await refresh(); view('overview');});};
 $('#route-form').onsubmit = async event => {event.preventDefault(); const provider=$('input[name=provider]:checked').value; if(provider==='psiphon' && !state.engine_installed) return toast('ابتدا از تنظیمات، موتور Psiphon را نصب کن.',true); await busy($('#route-form button[type=submit]'),async () => {const result=await api('routes/add',{country:$('#country').value,provider,inbound_id:Number($('#inbound').value),entry_port:$('#entry-port').value ? Number($('#entry-port').value) : null,proxy:$('#proxy').value,fallback_proxy:$('#fallback-proxy').value,allow_direct_fallback:$('#direct-fallback').checked,psiphon_authorized:$('#psiphon-consent').checked}); $('#route-dialog').close(); $('#proxy').value=''; $('#fallback-proxy').value=''; toast('مسیر ساخته شد. حالا Host آن را به پنل اضافه کن.'); await refresh(); hostInfo(result.id); });};
 $('#routes').onclick = async event => {
   const button=event.target.closest('button[data-action]'); if (!button) return; const {action,id}=button.dataset;
   if(action==='host') return hostInfo(id);
   const route=state.routes.find(r=>r.id===id);
-  if(action==='existing-edit') {try {await openExistingEdit(id);} catch(e) {toast(e.message,true);} return;}
+  if(action==='existing-edit') {try {await openExistingEdit(id);} catch(e) {FarstarFeedback.show(e);} return;}
   if(action==='existing-reconnect') {
     const warning=route.name==='Cloudflare WARP' ? 'این سرویس بین چند مسیر مشترک است. اتصال‌های WARP و تماس‌های UDP مربوط ممکن است قطع و دوباره وصل شوند.' : 'اتصال‌های باز همین خروجی ممکن است قطع و دوباره برقرار شوند. IP تازه تضمین نمی‌شود.';
     if(!await confirmAction('خروجی دوباره متصل شود؟',warning)) return;
@@ -255,9 +265,9 @@ function renderLicense(value) {
   document.querySelector('#license-status').textContent=(names[info.status]||info.status)+(info.permanent?' · دائمی':info.expires_at?' · پایان: '+new Date(info.expires_at*1000).toLocaleString('fa-IR'):'')+(info.offline_grace?' · استفاده از مهلت آفلاین':'')+(info.last_error?' · '+info.last_error:'');
 }
 document.querySelector('#license-form').onsubmit=async event=>{
-  event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;
-  try{const value=await licenseRequest('activate',{key:document.querySelector('#license-key').value,new_installation:document.querySelector('#license-new').checked});document.querySelector('#license-key').value='';document.querySelector('#license-new').checked=false;renderLicense(value);licenseNotice('لایسنس فعال شد.');}catch(error){licenseNotice(error.message,true);}finally{button.disabled=false;}
+  event.preventDefault();const button=event.target.querySelector('button[type=submit]');FarstarFeedback.clear({target:button});button.disabled=true;
+  try{const value=await licenseRequest('activate',{key:document.querySelector('#license-key').value,new_installation:document.querySelector('#license-new').checked});document.querySelector('#license-key').value='';document.querySelector('#license-new').checked=false;renderLicense(value);licenseNotice('لایسنس فعال شد.');}catch(error){FarstarFeedback.show(error,{target:button});}finally{button.disabled=false;}
 };
 document.querySelector('#license-refresh').onclick=async event=>{
-  event.target.disabled=true;try{renderLicense(await licenseRequest('refresh',{}));licenseNotice('وضعیت اعتبار بررسی شد.');}catch(error){licenseNotice(error.message,true);}finally{event.target.disabled=false;}
+  event.target.disabled=true;try{renderLicense(await licenseRequest('refresh',{}));licenseNotice('وضعیت اعتبار بررسی شد.');}catch(error){FarstarFeedback.show(error,{target:event.target});}finally{event.target.disabled=false;}
 };

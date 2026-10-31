@@ -16,6 +16,8 @@ FIELDS = {'remark', 'hosts', 'port', 'inboundIds', 'security', 'sni', 'hostHeade
 def endpoint(value, default_port=0):
     if not isinstance(value, str) or not value or len(value) > 300 or any(c.isspace() for c in value):
         raise ValueError('آدرس Host باید IP یا دامنه باشد؛ هر آدرس را در یک خط بنویسید.')
+    if '://' in value or any(c in value for c in '?#@\\'):
+        raise ValueError('آدرس Host نباید لینک یا شامل رمز باشد؛ فقط دامنه یا IP و پورت اختیاری وارد کنید.')
     if '/' in value:
         try:
             address, port = value, default_port

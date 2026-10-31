@@ -10,7 +10,7 @@ class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.base=Path(self.temp.name)
         self.source=self.base/'source';self.source.mkdir()
-        for name,content in {'VERSION':'0.1.0\n','atlas/__main__.py':'# test fixture\n','atlas/server.py':'# test fixture\n','atlas/license_client.py':'# test fixture\n','atlas/existing.py':'# test fixture\n','atlas/hosts.py':'# test fixture\n',
+        for name,content in {'VERSION':'0.1.0\n','atlas/__main__.py':'# test fixture\n','atlas/server.py':'# test fixture\n','atlas/license_client.py':'# test fixture\n','atlas/ui_errors.py':'# test fixture\n','web/ui-feedback.js':'//fixture\n','atlas/existing.py':'# test fixture\n','atlas/hosts.py':'# test fixture\n',
             'web/index.html':'<html>fixture</html>','providers/psiphon.json':'{}'}.items():
             p=self.source/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(content)
         self.manifest()
